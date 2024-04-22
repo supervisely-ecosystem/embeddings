@@ -21,6 +21,6 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: .
-        dockerfile: docker/Dockerfile_slycas
+        file: docker/Dockerfile_slycas
         push: true
         tags: iwatkot/slycastest:latest

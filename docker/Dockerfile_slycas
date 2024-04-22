@@ -1,0 +1,17 @@
+FROM ubuntu:20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    python3.12 \
+    python3-pip \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/src/app
+
+EXPOSE 51000
+
+RUN pip install clip-server==0.8.3
+
+CMD ["python3", "-m", "clip_server"]

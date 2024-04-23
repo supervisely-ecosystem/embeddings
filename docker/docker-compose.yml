@@ -6,7 +6,7 @@ services:
     ports:
       - 6333:6333
   clipservice:
-    image: iwatkot/slycastest
+    image: supervisely/cast
     container_name: clipservice
     ports:
       - 51000:51000

@@ -1,4 +1,4 @@
-name: Build and push SLYCAS image
+name: Build and push CAS server image
 
 on:
   workflow_dispatch:
@@ -21,6 +21,6 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: .
-        file: docker/Dockerfile
+        file: docker/Dockerfile_server
         push: true
         tags: supervisely/cas:latest

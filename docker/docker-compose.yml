@@ -6,7 +6,7 @@ services:
     ports:
       - 6333:6333
   clipservice:
-    image: supervisely/cast
+    image: supervisely/cas
     container_name: clipservice
     ports:
       - 51000:51000

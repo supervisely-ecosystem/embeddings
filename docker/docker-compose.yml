@@ -2,11 +2,11 @@ version: '3'
 services:
   vectordb:
     image: qdrant/qdrant
-    container_name: frb
+    container_name: vectordb
     ports:
       - 6333:6333
   clipservice:
     image: iwatkot/slycastest
-    container_name: frs
+    container_name: clipservice
     ports:
       - 51000:51000

@@ -132,8 +132,17 @@ def get_datasets(api: sly.Api, project_id: int) -> List[sly.DatasetInfo]:
 
 
 @timer
-def get_image_infos(api: sly.Api, dataset_id: int) -> List[ImageInfoLite]:
-    image_infos = api.image.get_list(dataset_id)
+def get_image_infos(
+    api: sly.Api, dataset_id: int = None, image_ids: List[int] = None
+) -> List[ImageInfoLite]:
+    if dataset_id:
+        image_infos = api.image.get_list(dataset_id)
+    elif image_ids:
+        image_infos = api.image.get_info_by_id_batch(image_ids)
+    elif dataset_id and image_ids:
+        raise ValueError("Either dataset_id or image_ids should be provided.")
+    elif not dataset_id and not image_ids:
+        raise ValueError("Either dataset_id or image_ids should be provided.")
     return [
         ImageInfoLite(
             id=image_info.id,

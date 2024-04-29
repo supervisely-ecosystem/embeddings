@@ -23,3 +23,10 @@ api: sly.Api = sly.Api.from_env()
 sly.logger.debug(
     f"Connected to {api.server_address}, team_id={team_id}, workspace_id={workspace_id}"
 )
+
+# region constants
+STORAGE_DIR = sly.env.agent_storage()
+HDF5_DIR = os.path.join(STORAGE_DIR, "hdf5")
+# endregion
+sly.fs.mkdir(HDF5_DIR)
+sly.logger.debug(f"Storage directory: {STORAGE_DIR}, HDF5 directory: {HDF5_DIR}")

@@ -65,7 +65,7 @@ async def test(request: Request):
             nps_batch = resize_nps(nps_batch)
 
             # Step 7: Save images to hdf5.
-            save_to_hdf5(nps_batch, ids_batch, project_id)
+            save_to_hdf5(dataset.id, nps_batch, ids_batch, project_id)
 
             # Step 8: Get vectors from images.
             vectors_batch = await get_vectors(url_batch)
@@ -84,17 +84,19 @@ async def test(request: Request):
 #     return sly.image.read_bytes(image_bytes)
 
 
+# * ADD GROUPING BY DATASET_ID INTO HDF5 TO SPEED UP THE RANDOM ACCESS LATENCY!
 @timer
-def save_to_hdf5(vectors: List[np.ndarray], ids: List[int], project_id: int):
+def save_to_hdf5(
+    dataset_id, vectors: List[np.ndarray], ids: List[int], project_id: int
+):
     file_path = os.path.join(g.HDF5_DIR, f"{project_id}.hdf5")
 
-    # There are two cases:
-    # 1. If the dataset with same id exists in the hdf5 file, we need to update it.
-    # 2. If the dataset with same id doesn't exist in the hdf5 file, we need to create it.
+    # Dataset ID will be used as a group name in hdf5 file.
 
     with h5py.File(file_path, "a") as file:
+        group = file.require_group(str(dataset_id))
         for vector, id in zip(vectors, ids):
-            file.require_dataset(
+            group.require_dataset(
                 str(id), data=vector, shape=vector.shape, dtype=vector.dtype
             )
 

@@ -87,15 +87,31 @@ async def test(request: Request):
 # * ADD GROUPING BY DATASET_ID INTO HDF5 TO SPEED UP THE RANDOM ACCESS LATENCY!
 @timer
 def save_to_hdf5(
-    dataset_id, vectors: List[np.ndarray], ids: List[int], project_id: int
+    dataset_id: int, vectors: List[np.ndarray], ids: List[int], project_id: int
 ):
+    """Save vector data to the HDF5 file.
+
+    :param dataset_id: ID of the dataset. It will be used as a group name.
+    :type dataset_id: int
+    :param vectors: List of vectors to save.
+    :type vectors: List[np.ndarray]
+    :param ids: List of IDs of the images. It will be used as a dataset name.
+        Order of IDs should match the order of vectors.
+    :type ids: List[int]
+    :param project_id: ID of the project. It will be used as a file name.
+    :type project_id: int
+    """
     file_path = os.path.join(g.HDF5_DIR, f"{project_id}.hdf5")
 
-    # Dataset ID will be used as a group name in hdf5 file.
-
     with h5py.File(file_path, "a") as file:
+        # Using Dataset ID as a group name.
+        # Require method works as get or create, to speed up the process.
+        # If group already exists, it will be returned, otherwise created.
         group = file.require_group(str(dataset_id))
         for vector, id in zip(vectors, ids):
+            # For each vector, we create a dataset with ID which comes from image ID.
+            # Same, require method works as get or create.
+            # So if vector for image with specific ID already exists, it will be overwritten.
             group.require_dataset(
                 str(id), data=vector, shape=vector.shape, dtype=vector.dtype
             )

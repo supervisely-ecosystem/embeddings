@@ -2,12 +2,12 @@ import asyncio
 import os
 from typing import List
 
-# import aiohttp
+import aiohttp
+import cv2
 import h5py
 import numpy as np
 import supervisely as sly
 from fastapi import Request
-from supervisely._utils import compress_image_url
 
 import src.cas as cas
 import src.globals as g
@@ -16,10 +16,6 @@ from src.utils import ImageInfoLite, timer
 
 app = sly.Application()
 server = app.get_server()
-
-
-WIDTH = 32
-HEIGHT = 32
 
 
 @server.post("/test")
@@ -40,7 +36,10 @@ async def test(request: Request):
     # Step 3: Iterate over datasets.
     for dataset in datasets:
         # Step 4: Get lite version of image infos to cut off unnecessary data.
-        all_image_infos = await asyncio.to_thread(get_image_infos, api, dataset.id)
+        # URLs will lead to resized images.
+        all_image_infos = await asyncio.to_thread(
+            get_image_infos, api, g.IMAGE_SIZE_FOR_CAS, dataset.id
+        )
 
         # Step 4.1: Get diff of image infos, check if they are already
         # in the Qdrant collection and have the same updated_at field.
@@ -52,17 +51,10 @@ async def test(request: Request):
             ids_batch = [image_info.id for image_info in image_batch]
 
             # Step 6: Download images as numpy arrays.
-            # nps_batch = await download_items(url_batch)
-            # ! DEBUG FUNCTION, REPLACE WITH COMMENTED ABOVE.
-            nps_batch = await asyncio.to_thread(
-                download_items,
-                dataset.id,
-                ids_batch,
-            )
+            nps_batch = await download_items(url_batch)
 
-            # ! Resize won't be needed with correct download function.
             # Step 6.1: Resize images.
-            nps_batch = resize_nps(nps_batch)
+            nps_batch = resize_nps(nps_batch, g.IMAGE_SIZE_FOR_ATLAS)
 
             # Step 7: Save images to hdf5.
             save_to_hdf5(dataset.id, nps_batch, ids_batch, project_id)
@@ -77,14 +69,6 @@ async def test(request: Request):
             )
 
 
-# async def download_item(session: aiohttp.ClientSession, url: str) -> np.ndarray:
-#     async with session.get(url) as response:
-#         image_bytes = await response.read()
-
-#     return sly.image.read_bytes(image_bytes)
-
-
-# * ADD GROUPING BY DATASET_ID INTO HDF5 TO SPEED UP THE RANDOM ACCESS LATENCY!
 @timer
 def save_to_hdf5(
     dataset_id: int, vectors: List[np.ndarray], ids: List[int], project_id: int
@@ -119,51 +103,151 @@ def save_to_hdf5(
 
 @timer
 async def get_vectors(image_urls: List[str]) -> List[np.ndarray]:
+    """Use CAS to get vectors from the list of images.
+
+    :param image_urls: List of URLs to get vectors from.
+    :type image_urls: List[str]
+    :return: List of vectors.
+    :rtype: List[np.ndarray]
+    """
     vectors = await cas.client.aencode(image_urls)
     return [vector.tolist() for vector in vectors]
 
 
 @timer
-def resize_nps(nps: List[np.ndarray]) -> List[np.ndarray]:
-    return [sly.image.resize(nps, out_size=(WIDTH, HEIGHT)) for nps in nps]
+def resize_nps(nps: List[np.ndarray], size: int) -> List[np.ndarray]:
+    """Resize list of numpy arrays to the square images with alpha channel.
+
+    :param nps: List of numpy arrays to resize.
+    :type nps: List[np.ndarray]
+    :param size: Size of the square image.
+    :type size: int
+    :return: List of resized images with alpha channel.
+    :rtype: List[np.ndarray]
+    """
+    return [_resize_to_rgba(np_image, size) for np_image in nps]
 
 
-# ! DEBUG FUNCTION, REPLACE WITH COMMENTED ONE.
+def _resize_to_rgba(rgb: np.ndarray, size: int) -> np.ndarray:
+    """Resizing RGB image while keeping the aspect ratio and adding alpha channel.
+    Returns square image with alpha channel.
+
+    :param rgb: RGB image as numpy array.
+    :type rgb: np.ndarray
+    :param size: Size of the square image.
+    :type size: int
+    :return: Resized image with alpha channel.
+    :rtype: np.ndarray
+    """
+
+    # Calculate the aspect ratio
+    h, w = rgb.shape[:2]
+    aspect_ratio = w / h
+
+    # Calculate new width and height while keeping the aspect ratio
+    if w > h:
+        new_w = size
+        new_h = int(size / aspect_ratio)
+    else:
+        new_h = size
+        new_w = int(size * aspect_ratio)
+
+    # Resize the image
+    resized_image = cv2.resize(rgb, (new_w, new_h))
+
+    # Create a new image with alpha channel
+    alpha_image = np.zeros((size, size, 4), dtype=np.uint8)
+
+    # Calculate padding
+    y_pad = (size - new_h) // 2
+    x_pad = (size - new_w) // 2
+
+    # Add the resized image to the new image
+    alpha_image[y_pad : y_pad + new_h, x_pad : x_pad + new_w, :3] = resized_image
+
+    # Set alpha channel to 255 where the image is
+    alpha_image[y_pad : y_pad + new_h, x_pad : x_pad + new_w, 3] = 255
+
+    return alpha_image
+
+
 @timer
-def download_items(dataset_id: int, ids: List[int]) -> List[np.ndarray]:
-    api = g.api
-    image_nps = api.image.download_nps(dataset_id, ids)
-    return image_nps
+async def download_items(urls: List[str]) -> List[np.ndarray]:
+    """Asynchronously download images from the list of URLs.
+
+    :param urls: List of URLs to download images from.
+    :type urls: List[str]
+    :return: List of downloaded images as numpy arrays.
+    :rtype: List[np.ndarray]
+    """
+    async with aiohttp.ClientSession() as session:
+        return await asyncio.gather(*[download_item(session, url) for url in urls])
 
 
-# @timer
-# async def download_items(urls: List[str]) -> List[np.ndarray]:
-#     async with aiohttp.ClientSession() as session:
-#         return await asyncio.gather(*[download_item(session, url) for url in urls])
+async def download_item(session: aiohttp.ClientSession, url: str) -> np.ndarray:
+    """Asynchronously download image from the URL and return it as numpy array.
+
+    :param session: Instance of aiohttp ClientSession.
+    :type session: aiohttp.ClientSession
+    :param url: URL to download image from.
+    :type url: str
+    :return: Downloaded image as numpy array.
+    :rtype: np.ndarray
+    """
+    async with session.get(url) as response:
+        image_bytes = await response.read()
+
+    return sly.image.read_bytes(image_bytes)
 
 
 @timer
 def get_datasets(api: sly.Api, project_id: int) -> List[sly.DatasetInfo]:
+    """Returns list of datasets from the project.
+
+    :param api: Instance of supervisely API.
+    :type api: sly.Api
+    :param project_id: ID of the project to get datasets from.
+    :type project_id: int
+    :return: List of datasets.
+    :rtype: List[sly.DatasetInfo]
+    """
     return api.dataset.get_list(project_id)
 
 
 @timer
 def get_image_infos(
-    api: sly.Api, dataset_id: int = None, image_ids: List[int] = None
+    api: sly.Api, size: int, dataset_id: int = None, image_ids: List[int] = None
 ) -> List[ImageInfoLite]:
+    """Returns lite version of image infos to cut off unnecessary data.
+    Uses either dataset_id or image_ids to get image infos.
+    If dataset_id is provided, it will be used to get all images from the dataset.
+    If image_ids are provided, they will be used to get image infos.
+
+    :param api: Instance of supervisely API.
+    :type api: sly.Api
+    :param size: Size of the images to resize.
+    :type size: int
+    :param dataset_id: ID of the dataset to get images from.
+    :type dataset_id: int, optional
+    :param image_ids: List of image IDs to get image infos.
+    :type image_ids: List[int], optional
+    :return: List of lite version of image infos.
+    :rtype: List[ImageInfoLite]
+    """
+
     if dataset_id:
         image_infos = api.image.get_list(dataset_id)
     elif image_ids:
         image_infos = api.image.get_info_by_id_batch(image_ids)
-    elif dataset_id and image_ids:
-        raise ValueError("Either dataset_id or image_ids should be provided.")
-    elif not dataset_id and not image_ids:
-        raise ValueError("Either dataset_id or image_ids should be provided.")
+
     return [
         ImageInfoLite(
             id=image_info.id,
-            url=compress_image_url(
-                image_info.full_storage_url, width=WIDTH, height=HEIGHT
+            url=api.image.resize_image_url(
+                image_info.full_storage_url,
+                method="fit",
+                width=size,
+                height=size,
             ),
             updated_at=image_info.updated_at,
         )

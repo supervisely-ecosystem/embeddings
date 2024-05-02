@@ -27,6 +27,8 @@ sly.logger.debug(
 # region constants
 STORAGE_DIR = sly.env.agent_storage()
 HDF5_DIR = os.path.join(STORAGE_DIR, "hdf5")
+IMAGE_SIZE_FOR_CAS = 224
+IMAGE_SIZE_FOR_ATLAS = 32
 # endregion
 sly.fs.mkdir(HDF5_DIR)
 sly.logger.debug(f"Storage directory: {STORAGE_DIR}, HDF5 directory: {HDF5_DIR}")

@@ -7,6 +7,7 @@ import supervisely as sly
 
 ImageInfoLite = namedtuple("ImageInfoLite", ["id", "dataset_id", "url", "updated_at"])
 LOG_THRESHOLD = 0.02
+SHOULD_NOT_BE_ASYNC_THRESHOLD = 0.1
 
 
 def timer(func):
@@ -37,6 +38,10 @@ def timer(func):
             result = func(*args, **kwargs)
             end_time = perf_counter()
             execution_time = end_time - start_time
+            if execution_time < SHOULD_NOT_BE_ASYNC_THRESHOLD:
+                sly.logger.warning(
+                    f"WARNING!!! {func.__name__} is too fast to be async."
+                )
             if execution_time > LOG_THRESHOLD:
                 sly.logger.debug(
                     f"BAD SPEED | {func.__name__}: {execution_time:.4f} sec"

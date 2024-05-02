@@ -9,6 +9,7 @@ import numpy as np
 import supervisely as sly
 from fastapi import Request
 
+import src.atlas as atlas
 import src.cas as cas
 import src.globals as g
 import src.qdrant as qdrant
@@ -18,9 +19,38 @@ app = sly.Application()
 server = app.get_server()
 
 
+@server.post("/create_atlas")
+@timer
+async def create_atlas(request: Request):
+    # ! DEBUG, will receive instance of API in request later.
+    # api = g.api
+    # end of debug
+
+    # Step 1: Unpack data from the request.
+    context = request.state.context
+    project_id = context.get("project_id")
+
+    # Step 2: Get number of tiles in the atlas.
+    num_tiles = atlas.tiles_in_atlas(g.ATLAS_SIZE, 1024)
+    sly.logger.debug(f"Full atlas should be containing {num_tiles} tiles.")
+
+    # Step 3: Get tiles from the HDF5 file and save them into separate atlas images.
+    for idx, tiles in enumerate(
+        atlas.get_tiles_from_hdf5(get_hdf5_path(project_id), num_tiles)
+    ):
+        sly.logger.debug(
+            f"Processing {idx + 1} batch of tiles. Received {len(tiles)} tiles."
+        )
+
+        atlas_image = await atlas.save_atlas(g.ATLAS_SIZE, 1024, tiles)
+
+        atlas_image = cv2.cvtColor(atlas_image, cv2.COLOR_RGBA2BGRA)
+        cv2.imwrite(os.path.join(g.ATLAS_DIR, f"{project_id}_{idx}.png"), atlas_image)
+
+
 @server.post("/embeddings")
 @timer
-async def embeddings(request: Request):
+async def create_embeddings(request: Request):
     # ! DEBUG, will receive instance of API in request later.
     api = g.api
     # end of debug
@@ -32,6 +62,11 @@ async def embeddings(request: Request):
     # updating embeddings for specific images, otherwise we're updating
     # the whole project.
     image_ids = context.get("image_ids")
+    force = context.get("force")
+
+    if force:
+        # Step 1.1: If force is True, delete the collection and recreate it.
+        qdrant.delete_collection(project_id)
 
     # Step 2: Ensure collection exists in Qdrant.
     await qdrant.get_or_create_collection(project_id)
@@ -102,9 +137,8 @@ def save_to_hdf5(
     :param project_id: ID of the project. It will be used as a file name.
     :type project_id: int
     """
-    file_path = os.path.join(g.HDF5_DIR, f"{project_id}.hdf5")
 
-    with h5py.File(file_path, "a") as file:
+    with h5py.File(get_hdf5_path(project_id), "a") as file:
         for vector, image_info in zip(vectors, image_infos):
             # Using Dataset ID as a group name.
             # Require method works as get or create, to speed up the process.
@@ -114,8 +148,16 @@ def save_to_hdf5(
             # Same, require method works as get or create.
             # So if vector for image with specific ID already exists, it will be overwritten.
             group.require_dataset(
-                str(id), data=vector, shape=vector.shape, dtype=vector.dtype
+                str(image_info.id), data=vector, shape=vector.shape, dtype=vector.dtype
             )
+
+    # Debug read the file and print number of datasets in it.
+    with h5py.File(get_hdf5_path(project_id), "r") as file:
+        print(f"Number of datasets in the file: {len(file)}")
+
+
+def get_hdf5_path(project_id: int):
+    return os.path.join(g.HDF5_DIR, f"{project_id}.hdf5")
 
 
 @timer

@@ -18,12 +18,14 @@ except Exception as e:
     sly.logger.error(f"Failed to connect to Qdrant at {g.qdrant_host} with error: {e}")
 
 
+async def delete_collection(collection_name: str):
+    sly.logger.debug(f"Deleting collection {collection_name}...")
+    await client.delete_collection(collection_name)
+
+
 async def get_or_create_collection(
     collection_name: str, size: int = 512, distance: Distance = Distance.COSINE
 ) -> CollectionInfo:
-    # ! DEBUG DELETING COLLECTION
-    # await client.delete_collection(collection_name)
-    # return
     try:
         collection = await client.get_collection(collection_name)
         sly.logger.debug(f"Collection {collection_name} already exists.")

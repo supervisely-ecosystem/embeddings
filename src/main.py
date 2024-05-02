@@ -18,81 +18,98 @@ app = sly.Application()
 server = app.get_server()
 
 
-@server.post("/test")
+@server.post("/embeddings")
 @timer
-async def test(request: Request):
-    # Step 0: Unpack request, get context and instance of API.
-    # * for debug using api from globals module
+async def embeddings(request: Request):
+    # ! DEBUG, will receive instance of API in request later.
     api = g.api
-    context = request.state.context
-    project_id = context["project_id"]
+    # end of debug
 
-    # Step 1: Ensure collection exists in Qdrant.
+    # Step 1: Unpack data from the request.
+    context = request.state.context
+    project_id = context.get("project_id")
+    # If context contains list of image_ids it means that we're
+    # updating embeddings for specific images, otherwise we're updating
+    # the whole project.
+    image_ids = context.get("image_ids")
+
+    # Step 2: Ensure collection exists in Qdrant.
     await qdrant.get_or_create_collection(project_id)
 
-    # Step 2: Get datasets from project.
-    datasets = await asyncio.to_thread(get_datasets, api, project_id)
+    # Step 3: Process images.
+    if not image_ids:
+        # Step 3A: If image_ids are not provided, get all datasets from the project.
+        # Then iterate over datasets and process images from each dataset.
+        datasets = await asyncio.to_thread(get_datasets, api, project_id)
+        for dataset in datasets:
+            await process_images(api, project_id, dataset_id=dataset.id)
+    else:
+        # Step 3B: If image_ids are provided, process images with specific IDs.
+        await process_images(api, project_id, image_ids=image_ids)
 
-    # Step 3: Iterate over datasets.
-    for dataset in datasets:
-        # Step 4: Get lite version of image infos to cut off unnecessary data.
-        # URLs will lead to resized images.
-        all_image_infos = await asyncio.to_thread(
-            get_image_infos, api, g.IMAGE_SIZE_FOR_CAS, dataset.id
+
+@timer
+async def process_images(
+    api: sly.Api, project_id: int, dataset_id: int = None, image_ids: List[int] = None
+):
+    image_infos = await asyncio.to_thread(
+        get_image_infos,
+        api,
+        g.IMAGE_SIZE_FOR_CAS,
+        dataset_id=dataset_id,
+        image_ids=image_ids,
+    )
+
+    # Step 4.1: Get diff of image infos, check if they are already
+    # in the Qdrant collection and have the same updated_at field.
+    diff_image_infos = await qdrant.get_diff(project_id, image_infos)
+
+    # Step 5: Batch image urls.
+    for image_batch in sly.batched(diff_image_infos):
+        url_batch = [image_info.url for image_info in image_batch]
+        ids_batch = [image_info.id for image_info in image_batch]
+
+        # Step 6: Download images as numpy arrays.
+        nps_batch = await download_items(url_batch)
+
+        # Step 6.1: Resize images.
+        nps_batch = resize_nps(nps_batch, g.IMAGE_SIZE_FOR_ATLAS)
+
+        # Step 7: Save images to hdf5.
+        save_to_hdf5(nps_batch, image_batch, project_id)
+
+        # Step 8: Get vectors from images.
+        vectors_batch = await get_vectors(url_batch)
+        updated_at_batch = [image_info.updated_at for image_info in image_batch]
+
+        # Step 9: Upsert vectors to Qdrant.
+        await qdrant.upsert(
+            project_id, vectors_batch, ids_batch, updated_at=updated_at_batch
         )
-
-        # Step 4.1: Get diff of image infos, check if they are already
-        # in the Qdrant collection and have the same updated_at field.
-        image_infos = await qdrant.get_diff(project_id, all_image_infos)
-
-        # Step 5: Batch image urls.
-        for image_batch in sly.batched(image_infos):
-            url_batch = [image_info.url for image_info in image_batch]
-            ids_batch = [image_info.id for image_info in image_batch]
-
-            # Step 6: Download images as numpy arrays.
-            nps_batch = await download_items(url_batch)
-
-            # Step 6.1: Resize images.
-            nps_batch = resize_nps(nps_batch, g.IMAGE_SIZE_FOR_ATLAS)
-
-            # Step 7: Save images to hdf5.
-            save_to_hdf5(dataset.id, nps_batch, ids_batch, project_id)
-
-            # Step 8: Get vectors from images.
-            vectors_batch = await get_vectors(url_batch)
-            updated_at_batch = [image_info.updated_at for image_info in image_batch]
-
-            # Step 9: Upsert vectors to Qdrant.
-            await qdrant.upsert(
-                project_id, vectors_batch, ids_batch, updated_at=updated_at_batch
-            )
 
 
 @timer
 def save_to_hdf5(
-    dataset_id: int, vectors: List[np.ndarray], ids: List[int], project_id: int
+    vectors: List[np.ndarray], image_infos: List[ImageInfoLite], project_id: int
 ):
     """Save vector data to the HDF5 file.
 
-    :param dataset_id: ID of the dataset. It will be used as a group name.
-    :type dataset_id: int
     :param vectors: List of vectors to save.
     :type vectors: List[np.ndarray]
-    :param ids: List of IDs of the images. It will be used as a dataset name.
-        Order of IDs should match the order of vectors.
-    :type ids: List[int]
+    :param image_infos: List of image infos to get image IDs.
+        Image ID will be used as a dataset name. Length of this list should be the same as vectors.
+    :type image_infos: List[ImageInfoLite]
     :param project_id: ID of the project. It will be used as a file name.
     :type project_id: int
     """
     file_path = os.path.join(g.HDF5_DIR, f"{project_id}.hdf5")
 
     with h5py.File(file_path, "a") as file:
-        # Using Dataset ID as a group name.
-        # Require method works as get or create, to speed up the process.
-        # If group already exists, it will be returned, otherwise created.
-        group = file.require_group(str(dataset_id))
-        for vector, id in zip(vectors, ids):
+        for vector, image_info in zip(vectors, image_infos):
+            # Using Dataset ID as a group name.
+            # Require method works as get or create, to speed up the process.
+            # If group already exists, it will be returned, otherwise created.
+            group = file.require_group(str(image_info.dataset_id))
             # For each vector, we create a dataset with ID which comes from image ID.
             # Same, require method works as get or create.
             # So if vector for image with specific ID already exists, it will be overwritten.
@@ -243,6 +260,7 @@ def get_image_infos(
     return [
         ImageInfoLite(
             id=image_info.id,
+            dataset_id=image_info.dataset_id,
             url=api.image.resize_image_url(
                 image_info.full_storage_url,
                 method="fit",

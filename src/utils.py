@@ -5,7 +5,7 @@ from time import perf_counter
 
 import supervisely as sly
 
-ImageInfoLite = namedtuple("ImageInfoLite", ["id", "url", "updated_at"])
+ImageInfoLite = namedtuple("ImageInfoLite", ["id", "dataset_id", "url", "updated_at"])
 LOG_THRESHOLD = 0.02
 
 

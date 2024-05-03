@@ -18,6 +18,7 @@ except Exception as e:
     sly.logger.error(f"Failed to connect to Qdrant at {g.qdrant_host} with error: {e}")
 
 
+@timer
 async def delete_collection(collection_name: str):
     sly.logger.debug(f"Deleting collection {collection_name}...")
     try:
@@ -27,6 +28,7 @@ async def delete_collection(collection_name: str):
         sly.logger.debug(f"Collection {collection_name} wasn't found while deleting.")
 
 
+@timer
 async def get_or_create_collection(
     collection_name: str, size: int = 512, distance: Distance = Distance.COSINE
 ) -> CollectionInfo:
@@ -41,6 +43,14 @@ async def get_or_create_collection(
         sly.logger.debug(f"Collection {collection_name} created.")
         collection = await client.get_collection(collection_name)
     return collection
+
+
+@timer
+async def get_vectors(collection_name: str, image_ids: List[int]) -> List[np.ndarray]:
+    points = await client.retrieve(
+        collection_name, image_ids, with_payload=False, with_vectors=True
+    )
+    return [point.vector for point in points]
 
 
 @timer

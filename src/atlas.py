@@ -60,6 +60,7 @@ async def save_atlas(
                 "id": idx,
                 "unitSize": tile_info.unitSize,
                 "url": tile_info.url,
+                "image_id": tile_info.id,
             }
         )
 

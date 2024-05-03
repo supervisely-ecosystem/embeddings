@@ -13,7 +13,10 @@ TileInfo = namedtuple(
     "TileInfo",
     ["id", "unitSize", "url", "thumbnail"],
 )
-
+PointCloudTileInfo = namedtuple(
+    "PointCloudTileInfo",
+    ["atlasId", "atlasIndex", "imageId", "vector"],
+)
 
 LOG_THRESHOLD = 0.02
 SHOULD_NOT_BE_ASYNC_THRESHOLD = 0.1

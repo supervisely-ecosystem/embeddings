@@ -1,20 +1,23 @@
 import asyncio
 import json
 import os
-from typing import List
+from typing import Dict, List, Union
 
 import aiohttp
 import cv2
 import h5py
 import numpy as np
 import supervisely as sly
+import umap
 from fastapi import Request
+from pympler import asizeof
+from pypcd4 import Encoding, PointCloud
 
 import src.atlas as atlas
 import src.cas as cas
 import src.globals as g
 import src.qdrant as qdrant
-from src.utils import ImageInfoLite, timer
+from src.utils import ImageInfoLite, PointCloudTileInfo, timer
 
 app = sly.Application()
 server = app.get_server()
@@ -30,10 +33,15 @@ async def create_atlas(request: Request):
     # Step 1: Unpack data from the request.
     context = request.state.context
     project_id = context.get("project_id")
+    sly.logger.info(f"Creating atlas for project {project_id}...")
 
     # Step 2: Get number of tiles in the atlas.
     num_tiles = atlas.tiles_in_atlas(g.ATLAS_SIZE, 512)
     sly.logger.debug(f"Full atlas should be containing {num_tiles} tiles.")
+
+    # Step 2.1: Prepare empty vector and atlas maps.
+    atlas_map = []
+    vector_map = []
 
     # Step 3: Get tiles from the HDF5 file and save them into separate atlas images.
     for idx, tiles in enumerate(
@@ -43,16 +51,109 @@ async def create_atlas(request: Request):
             f"Processing {idx + 1} batch of tiles. Received {len(tiles)} tiles."
         )
 
-        atlas_image, atlas_map = await atlas.save_atlas(g.ATLAS_SIZE, 512, tiles)
+        page_image, page_map = await atlas.save_atlas(g.ATLAS_SIZE, 512, tiles)
+        vector_map.extend(await get_vector_map(idx, project_id, page_map))
+        atlas_map.extend(page_map)
 
-        atlas_image = cv2.cvtColor(atlas_image, cv2.COLOR_RGBA2BGRA)
+        if sly.is_development():
+            vector_map_size = asizeof.asizeof(vector_map) / 1024 / 1024
+            sly.logger.debug(f"Vector map size: {vector_map_size:.2f} MB")
 
-        cv2.imwrite(os.path.join(g.ATLAS_DIR, f"{project_id}_{idx}.png"), atlas_image)
-        json.dump(
-            atlas_map,
-            open(os.path.join(g.ATLAS_DIR, f"{project_id}_{idx}.json"), "w"),
-            indent=4,
+        # Convert RGBA to BGRA for compatibility with OpenCV.
+        page_image = cv2.cvtColor(page_image, cv2.COLOR_RGBA2BGRA)
+
+        # Save atlas image to the file.
+        cv2.imwrite(os.path.join(g.ATLAS_DIR, f"{project_id}_{idx}.png"), page_image)
+
+    json.dump(
+        atlas_map,
+        open(os.path.join(g.ATLAS_DIR, f"{project_id}.json"), "w"),
+        indent=4,
+    )
+
+    umap_vectors = await asyncio.to_thread(
+        create_umap, [entry.vector for entry in vector_map]
+    )
+    cloud = await asyncio.to_thread(create_point_cloud, umap_vectors, vector_map)
+    cloud.save(
+        os.path.join(g.ATLAS_DIR, f"{project_id}.pcd"),
+        encoding=Encoding.BINARY_COMPRESSED,
+    )
+
+    if sly.is_development():
+        cloud = PointCloud.from_path(os.path.join(g.ATLAS_DIR, f"{project_id}.pcd"))
+        sly.logger.debug(f"Number of points in the cloud: {cloud.points}")
+        sly.logger.debug(f"Fields in the PCD file: {cloud.fields}")
+
+    sly.logger.info(f"Atlas for project {project_id} has been created.")
+
+
+@timer
+def create_point_cloud(
+    umap_vectors: np.ndarray, vector_map: List[PointCloudTileInfo]
+) -> PointCloud:
+    custom_fields = [field for field in PointCloudTileInfo._fields if field != "vector"]
+    return PointCloud.from_points(
+        points=_add_metadata_to_umap(umap_vectors, vector_map),
+        fields=g.DEFAULT_PCD_FIELDS + custom_fields,
+        types=[np.float32, np.float32, np.float32, np.int32, np.int32, np.int32],
+    )
+
+
+@timer
+def _add_metadata_to_umap(
+    umap_vectors: np.ndarray, vector_map: List[PointCloudTileInfo]
+) -> np.ndarray:
+    with_metadata = np.hstack(
+        (
+            umap_vectors,
+            np.array(
+                [
+                    [entry.atlasId, entry.atlasIndex, entry.imageId]
+                    for entry in vector_map
+                ]
+            ),
         )
+    )
+    sly.logger.debug(f"UMAP vectors with metadata shape: {with_metadata.shape}")
+    return with_metadata
+
+
+@timer
+def create_umap(vectors: List[np.ndarray], n_components: int = 3) -> np.ndarray:
+    reducer = umap.UMAP(n_components=n_components)
+    umap_vectors = reducer.fit_transform(vectors)
+    sly.logger.debug(f"UMAP vectors shape: {umap_vectors.shape}")
+    return umap_vectors
+
+
+@timer
+async def get_vector_map(
+    atlas_id: int, project_id: int, atlas_map: List[Dict[str, Union[str, int]]]
+) -> List[PointCloudTileInfo]:
+    vector_map = []
+    image_ids = []
+    for entry in atlas_map:
+        image_id = entry.pop("image_id")
+        vector_map.append(
+            {
+                "image_id": image_id,
+                "id": entry.get("id"),
+            }
+        )
+        image_ids.append(image_id)
+
+    vectors = await qdrant.get_vectors(project_id, image_ids)
+
+    return [
+        PointCloudTileInfo(
+            atlasId=atlas_id,
+            atlasIndex=entry.get("id"),
+            imageId=entry.get("image_id"),
+            vector=vector,
+        )
+        for entry, vector in zip(vector_map, vectors)
+    ]
 
 
 @server.post("/embeddings")

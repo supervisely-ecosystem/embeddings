@@ -1,23 +1,21 @@
 import asyncio
 import json
 import os
-from typing import Dict, List, Union
+from typing import List
 
 import aiohttp
 import cv2
-import h5py
 import numpy as np
 import supervisely as sly
-import umap
 from fastapi import Request
 from pympler import asizeof
-from pypcd4 import Encoding, PointCloud
 
 import src.atlas as atlas
 import src.cas as cas
 import src.globals as g
 import src.qdrant as qdrant
-from src.utils import ImageInfoLite, PointCloudTileInfo, timer
+from src.thumbnails import get_hdf5_path, save_to_hdf5
+from src.utils import ImageInfoLite, rgb_to_rgba, timer
 
 app = sly.Application()
 server = app.get_server()
@@ -51,109 +49,35 @@ async def create_atlas(request: Request):
             f"Processing {idx + 1} batch of tiles. Received {len(tiles)} tiles."
         )
 
+        # Step 4: Get atlas image and map. Image is a numpy array, map is a list of dictionaries.
         page_image, page_map = await atlas.save_atlas(g.ATLAS_SIZE, 512, tiles)
-        vector_map.extend(await get_vector_map(idx, project_id, page_map))
+
+        # Step 5: Add page elements to the vector and atlas maps, which will be saved to the files
+        # without splitting into pages.
+        vector_map.extend(await atlas.get_vector_map(idx, project_id, page_map))
         atlas_map.extend(page_map)
 
         if sly.is_development():
+            # Checking how much memory the vector map takes.
             vector_map_size = asizeof.asizeof(vector_map) / 1024 / 1024
             sly.logger.debug(f"Vector map size: {vector_map_size:.2f} MB")
 
-        # Convert RGBA to BGRA for compatibility with OpenCV.
+        # Step 6.1: Convert RGBA to BGRA for compatibility with OpenCV.
         page_image = cv2.cvtColor(page_image, cv2.COLOR_RGBA2BGRA)
-
-        # Save atlas image to the file.
+        # Step 6.2: Save atlas image to the file.
         cv2.imwrite(os.path.join(g.ATLAS_DIR, f"{project_id}_{idx}.png"), page_image)
 
+    # Step 7: Save atlas map to the JSON file.
     json.dump(
         atlas_map,
         open(os.path.join(g.ATLAS_DIR, f"{project_id}.json"), "w"),
         indent=4,
     )
 
-    umap_vectors = await asyncio.to_thread(
-        create_umap, [entry.vector for entry in vector_map]
-    )
-    cloud = await asyncio.to_thread(create_point_cloud, umap_vectors, vector_map)
-    cloud.save(
-        os.path.join(g.ATLAS_DIR, f"{project_id}.pcd"),
-        encoding=Encoding.BINARY_COMPRESSED,
-    )
-
-    if sly.is_development():
-        cloud = PointCloud.from_path(os.path.join(g.ATLAS_DIR, f"{project_id}.pcd"))
-        sly.logger.debug(f"Number of points in the cloud: {cloud.points}")
-        sly.logger.debug(f"Fields in the PCD file: {cloud.fields}")
+    # Step 8: Create and save the vector map to the PCD file.
+    await atlas.create_pointcloud(project_id, vector_map)
 
     sly.logger.info(f"Atlas for project {project_id} has been created.")
-
-
-@timer
-def create_point_cloud(
-    umap_vectors: np.ndarray, vector_map: List[PointCloudTileInfo]
-) -> PointCloud:
-    custom_fields = [field for field in PointCloudTileInfo._fields if field != "vector"]
-    return PointCloud.from_points(
-        points=_add_metadata_to_umap(umap_vectors, vector_map),
-        fields=g.DEFAULT_PCD_FIELDS + custom_fields,
-        types=[np.float32, np.float32, np.float32, np.int32, np.int32, np.int32],
-    )
-
-
-@timer
-def _add_metadata_to_umap(
-    umap_vectors: np.ndarray, vector_map: List[PointCloudTileInfo]
-) -> np.ndarray:
-    with_metadata = np.hstack(
-        (
-            umap_vectors,
-            np.array(
-                [
-                    [entry.atlasId, entry.atlasIndex, entry.imageId]
-                    for entry in vector_map
-                ]
-            ),
-        )
-    )
-    sly.logger.debug(f"UMAP vectors with metadata shape: {with_metadata.shape}")
-    return with_metadata
-
-
-@timer
-def create_umap(vectors: List[np.ndarray], n_components: int = 3) -> np.ndarray:
-    reducer = umap.UMAP(n_components=n_components)
-    umap_vectors = reducer.fit_transform(vectors)
-    sly.logger.debug(f"UMAP vectors shape: {umap_vectors.shape}")
-    return umap_vectors
-
-
-@timer
-async def get_vector_map(
-    atlas_id: int, project_id: int, atlas_map: List[Dict[str, Union[str, int]]]
-) -> List[PointCloudTileInfo]:
-    vector_map = []
-    image_ids = []
-    for entry in atlas_map:
-        image_id = entry.pop("image_id")
-        vector_map.append(
-            {
-                "image_id": image_id,
-                "id": entry.get("id"),
-            }
-        )
-        image_ids.append(image_id)
-
-    vectors = await qdrant.get_vectors(project_id, image_ids)
-
-    return [
-        PointCloudTileInfo(
-            atlasId=atlas_id,
-            atlasIndex=entry.get("id"),
-            imageId=entry.get("image_id"),
-            vector=vector,
-        )
-        for entry, vector in zip(vector_map, vectors)
-    ]
 
 
 @server.post("/embeddings")
@@ -227,7 +151,7 @@ async def process_images(
         save_to_hdf5(nps_batch, image_batch, project_id)
 
         # Step 8: Get vectors from images.
-        vectors_batch = await get_vectors(
+        vectors_batch = await cas.get_vectors(
             [image_info.cas_url for image_info in image_batch]
         )
 
@@ -238,116 +162,6 @@ async def process_images(
             [image_info.id for image_info in image_batch],
             updated_at=[image_info.updated_at for image_info in image_batch],
         )
-
-
-@timer
-def save_to_hdf5(
-    image_nps: List[np.ndarray],
-    image_infos: List[ImageInfoLite],
-    project_id: int,
-):
-    """Save thumbnail numpy array data to the HDF5 file.
-
-    :param image_np: List of image_np to save.
-    :type image_np: List[np.ndarray]
-    :param image_infos: List of image infos to get image IDs.
-        Image ID will be used as a dataset name. Length of this list should be the same as image_np.
-    :type image_infos: List[ImageInfoLite]
-    :param project_id: ID of the project. It will be used as a file name.
-    :type project_id: int
-    """
-
-    with h5py.File(get_hdf5_path(project_id), "a") as file:
-        for image_np, image_info in zip(image_nps, image_infos):
-            # Using Dataset ID as a group name.
-            # Require method works as get or create, to speed up the process.
-            # If group already exists, it will be returned, otherwise created.
-            group = file.require_group(str(image_info.dataset_id))
-            # For each numpy array, we create a dataset with ID which comes from image ID.
-            # Same, require method works as get or create.
-            # So if numpy_array for image with specific ID already exists, it will be overwritten.
-            dataset = group.require_dataset(
-                str(image_info.id),
-                data=image_np,
-                shape=image_np.shape,
-                dtype=image_np.dtype,
-            )
-
-            dataset.attrs[g.HDF5_URL_KEY] = image_info.full_url
-
-
-def get_hdf5_path(project_id: int):
-    return os.path.join(g.HDF5_DIR, f"{project_id}.hdf5")
-
-
-@timer
-async def get_vectors(image_urls: List[str]) -> List[np.ndarray]:
-    """Use CAS to get vectors from the list of images.
-
-    :param image_urls: List of URLs to get vectors from.
-    :type image_urls: List[str]
-    :return: List of vectors.
-    :rtype: List[np.ndarray]
-    """
-    vectors = await cas.client.aencode(image_urls)
-    return [vector.tolist() for vector in vectors]
-
-
-@timer
-def rgb_to_rgba(nps: List[np.ndarray], size: int) -> List[np.ndarray]:
-    """Resize list of numpy arrays to the square images with alpha channel.
-
-    :param nps: List of numpy arrays to resize.
-    :type nps: List[np.ndarray]
-    :param size: Size of the square image.
-    :type size: int
-    :return: List of resized images with alpha channel.
-    :rtype: List[np.ndarray]
-    """
-    return [_rgb_to_rgba(np_image, size) for np_image in nps]
-
-
-def _rgb_to_rgba(rgb: np.ndarray, size: int) -> np.ndarray:
-    """Resizing RGB image while keeping the aspect ratio and adding alpha channel.
-    Returns square image with alpha channel.
-
-    :param rgb: RGB image as numpy array.
-    :type rgb: np.ndarray
-    :param size: Size of the square image.
-    :type size: int
-    :return: Resized image with alpha channel.
-    :rtype: np.ndarray
-    """
-
-    # Calculate the aspect ratio
-    h, w = rgb.shape[:2]
-    aspect_ratio = w / h
-
-    # Calculate new width and height while keeping the aspect ratio
-    if w > h:
-        new_w = size
-        new_h = int(size / aspect_ratio)
-    else:
-        new_h = size
-        new_w = int(size * aspect_ratio)
-
-    # Resize the image
-    resized_image = cv2.resize(rgb, (new_w, new_h))
-
-    # Create a new image with alpha channel
-    alpha_image = np.zeros((size, size, 4), dtype=np.uint8)
-
-    # Calculate padding
-    y_pad = (size - new_h) // 2
-    x_pad = (size - new_w) // 2
-
-    # Add the resized image to the new image
-    alpha_image[y_pad : y_pad + new_h, x_pad : x_pad + new_w, :3] = resized_image
-
-    # Set alpha channel to 255 where the image is
-    alpha_image[y_pad : y_pad + new_h, x_pad : x_pad + new_w, 3] = 255
-
-    return alpha_image
 
 
 @timer

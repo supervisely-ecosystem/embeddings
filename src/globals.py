@@ -7,6 +7,8 @@ if sly.is_development():
     load_dotenv(os.path.expanduser("~/supervisely-prod.env"))
     load_dotenv("local.env")
 
+# ! DEBUG! Remove team_id and workspace_id from the environment variables.
+# Also, remove creating sly.Api instance.
 # region envvars
 team_id = sly.io.env.team_id()
 workspace_id = sly.io.env.workspace_id()

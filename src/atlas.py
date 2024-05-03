@@ -1,12 +1,13 @@
 import math
-from typing import Generator, List
+from typing import Dict, Generator, List, Tuple, Union
 
 import cv2
 import h5py
 import numpy as np
 import supervisely as sly
 
-from src.utils import timer
+import src.globals as g
+from src.utils import TileInfo, timer
 
 
 def tiles_in_atlas(atlas_size: int, tile_size: int) -> int:
@@ -24,37 +25,45 @@ def tiles_in_atlas(atlas_size: int, tile_size: int) -> int:
 
 @timer
 async def save_atlas(
-    atlas_size: int, tile_size: int, image_nps: List[np.ndarray]
-) -> np.ndarray:
+    atlas_size: int, tile_size: int, tile_infos: List[TileInfo]
+) -> Tuple[np.ndarray, List[Dict[str, Union[str, int]]]]:
     # Receives a list of 4-channel RGBA numpy arrays and returns a single 4-channel RGBA numpy array.
     # Tiles of the atlas are filled row by row from the top left corner.
     # Result height of the atlas depends on the number of given image_nps (will be less than atlas_size if needed).
-
     num_tiles = atlas_size // tile_size
     sly.logger.debug(f"Full atlas should be {num_tiles}x{num_tiles} tiles.")
-    rows = math.ceil(len(image_nps) / num_tiles)
+    rows = math.ceil(len(tile_infos) / num_tiles)
     sly.logger.debug(
-        f"Given amount ({len(image_nps)}) of images will fill {rows} rows."
+        f"Given amount ({len(tile_infos)}) of images will fill {rows} rows."
     )
 
     # Create an empty atlas with rows number of rows
     atlas = np.zeros((rows * tile_size, atlas_size, 4), dtype=np.uint8)
     sly.logger.debug(f"Created an empty atlas with shape {atlas.shape}.")
+    atlas_map = []
 
-    # Fill the atlas with tiles
-    for i, image_np in enumerate(image_nps):
-        # Resize the image_np if it's not the same size as the tile_size.
-        if image_np.shape[0] != tile_size:
-            image_np = resize_np(image_np, tile_size)
+    # Iterate over the thumbnails and fill the atlas, adding metadata to the atlas_map.
+    for idx, tile_info in enumerate(tile_infos):
+        # Resize the thumbnail if it's not the same size as the tile_size.
+        if tile_info.thumbnail.shape[0] != tile_size:
+            thumbnail = resize_np(tile_info.thumbnail, tile_size)
 
-        row = i // num_tiles
-        col = i % num_tiles
+        row = idx // num_tiles
+        col = idx % num_tiles
         atlas[
             row * tile_size : (row + 1) * tile_size,
             col * tile_size : (col + 1) * tile_size,
-        ] = image_np
+        ] = thumbnail
 
-    return atlas
+        atlas_map.append(
+            {
+                "id": idx,
+                "unitSize": tile_info.unitSize,
+                "url": tile_info.url,
+            }
+        )
+
+    return atlas, atlas_map
 
 
 def resize_np(image_np: np.ndarray, size: int) -> np.ndarray:
@@ -73,7 +82,7 @@ def resize_np(image_np: np.ndarray, size: int) -> np.ndarray:
 @timer
 def get_tiles_from_hdf5(
     hdf5_path: str, batch_size: int
-) -> Generator[List[np.ndarray], None, None]:
+) -> Generator[List[TileInfo], None, None]:
     """Reads HDF5 file from given path and returns a generator of numpy arrays
     split into batches of given size. At the end yields the remaining items in the batch
 
@@ -81,20 +90,28 @@ def get_tiles_from_hdf5(
     :type hdf5_path: str
     :param batch_size: size of the batch
     :type batch_size: int
-    :return: generator of numpy arrays
-    :rtype: Generator[List[np.ndarray], None, None]
+    :return: generator of TileInfo objects
+    :rtype: Generator[List[TileInfo], None, None]
     """
 
     # Open the HDF5 file
     with h5py.File(hdf5_path, "r") as f:
-        # Initialize a list to hold the batch of numpy arrays
+        # Initialize a list to hold the batch of items
         batch = []
         # Iterate over groups in the HDF5 file
         for group in f.values():
             # Iterate over datasets in the group
             for dataset in group.values():
                 # Add the dataset to the batch
-                batch.append(np.array(dataset))
+                thumbnail = np.array(dataset)
+                batch.append(
+                    TileInfo(
+                        id=image_id_from_dataset(dataset.name),
+                        unitSize=thumbnail.shape[0],
+                        url=dataset.attrs.get(g.HDF5_URL_KEY),
+                        thumbnail=thumbnail,
+                    )
+                )
                 # If the batch has reached the desired size, yield it
                 if len(batch) == batch_size:
                     yield batch
@@ -103,3 +120,8 @@ def get_tiles_from_hdf5(
         # If there are any remaining items in the batch, yield them
         if batch:
             yield batch
+
+
+def image_id_from_dataset(dataset_name: str) -> int:
+    # Example: "/0022233/123456", 123456 is the image_id
+    return int(dataset_name.split("/")[-1])

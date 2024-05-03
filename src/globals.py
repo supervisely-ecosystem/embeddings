@@ -31,6 +31,8 @@ ATLAS_DIR = os.path.join(STORAGE_DIR, "atlas")
 IMAGE_SIZE_FOR_CAS = 224
 IMAGE_SIZE_FOR_ATLAS = 32
 ATLAS_SIZE = pow(2, 13)
+
+HDF5_URL_KEY = "url"
 # endregion
 sly.fs.mkdir(HDF5_DIR)
 sly.fs.mkdir(ATLAS_DIR, remove_content_if_exists=True)

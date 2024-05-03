@@ -20,7 +20,11 @@ except Exception as e:
 
 async def delete_collection(collection_name: str):
     sly.logger.debug(f"Deleting collection {collection_name}...")
-    await client.delete_collection(collection_name)
+    try:
+        await client.delete_collection(collection_name)
+        sly.logger.debug(f"Collection {collection_name} deleted.")
+    except UnexpectedResponse:
+        sly.logger.debug(f"Collection {collection_name} wasn't found while deleting.")
 
 
 async def get_or_create_collection(

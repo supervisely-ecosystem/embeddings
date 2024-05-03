@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from typing import List
 
@@ -31,7 +32,7 @@ async def create_atlas(request: Request):
     project_id = context.get("project_id")
 
     # Step 2: Get number of tiles in the atlas.
-    num_tiles = atlas.tiles_in_atlas(g.ATLAS_SIZE, 1024)
+    num_tiles = atlas.tiles_in_atlas(g.ATLAS_SIZE, 512)
     sly.logger.debug(f"Full atlas should be containing {num_tiles} tiles.")
 
     # Step 3: Get tiles from the HDF5 file and save them into separate atlas images.
@@ -42,10 +43,16 @@ async def create_atlas(request: Request):
             f"Processing {idx + 1} batch of tiles. Received {len(tiles)} tiles."
         )
 
-        atlas_image = await atlas.save_atlas(g.ATLAS_SIZE, 1024, tiles)
+        atlas_image, atlas_map = await atlas.save_atlas(g.ATLAS_SIZE, 512, tiles)
 
         atlas_image = cv2.cvtColor(atlas_image, cv2.COLOR_RGBA2BGRA)
+
         cv2.imwrite(os.path.join(g.ATLAS_DIR, f"{project_id}_{idx}.png"), atlas_image)
+        json.dump(
+            atlas_map,
+            open(os.path.join(g.ATLAS_DIR, f"{project_id}_{idx}.json"), "w"),
+            indent=4,
+        )
 
 
 @server.post("/embeddings")
@@ -66,7 +73,8 @@ async def create_embeddings(request: Request):
 
     if force:
         # Step 1.1: If force is True, delete the collection and recreate it.
-        qdrant.delete_collection(project_id)
+        sly.logger.debug(f"Force is True, deleting collection {project_id}.")
+        await qdrant.delete_collection(project_id)
 
     # Step 2: Ensure collection exists in Qdrant.
     await qdrant.get_or_create_collection(project_id)
@@ -91,6 +99,7 @@ async def process_images(
         get_image_infos,
         api,
         g.IMAGE_SIZE_FOR_CAS,
+        g.IMAGE_SIZE_FOR_ATLAS,
         dataset_id=dataset_id,
         image_ids=image_ids,
     )
@@ -101,59 +110,69 @@ async def process_images(
 
     # Step 5: Batch image urls.
     for image_batch in sly.batched(diff_image_infos):
-        url_batch = [image_info.url for image_info in image_batch]
-        ids_batch = [image_info.id for image_info in image_batch]
+        # url_batch = [image_info.url for image_info in image_batch]
+        # ids_batch = [image_info.id for image_info in image_batch]
 
-        # Step 6: Download images as numpy arrays.
-        nps_batch = await download_items(url_batch)
+        # Step 6: Download images as numpy arrays using URLs resized
+        # for for specified HDF5 sizes (for thumbnails in the atlas).
+        nps_batch = await download_items(
+            [image_info.hdf5_url for image_info in image_batch]
+        )
 
-        # Step 6.1: Resize images.
-        nps_batch = resize_nps(nps_batch, g.IMAGE_SIZE_FOR_ATLAS)
+        # Step 6.1: Convert tiles into square images with alpha channel.
+        nps_batch = rgb_to_rgba(nps_batch, g.IMAGE_SIZE_FOR_ATLAS)
 
         # Step 7: Save images to hdf5.
         save_to_hdf5(nps_batch, image_batch, project_id)
 
         # Step 8: Get vectors from images.
-        vectors_batch = await get_vectors(url_batch)
-        updated_at_batch = [image_info.updated_at for image_info in image_batch]
+        vectors_batch = await get_vectors(
+            [image_info.cas_url for image_info in image_batch]
+        )
 
         # Step 9: Upsert vectors to Qdrant.
         await qdrant.upsert(
-            project_id, vectors_batch, ids_batch, updated_at=updated_at_batch
+            project_id,
+            vectors_batch,
+            [image_info.id for image_info in image_batch],
+            updated_at=[image_info.updated_at for image_info in image_batch],
         )
 
 
 @timer
 def save_to_hdf5(
-    vectors: List[np.ndarray], image_infos: List[ImageInfoLite], project_id: int
+    image_nps: List[np.ndarray],
+    image_infos: List[ImageInfoLite],
+    project_id: int,
 ):
-    """Save vector data to the HDF5 file.
+    """Save thumbnail numpy array data to the HDF5 file.
 
-    :param vectors: List of vectors to save.
-    :type vectors: List[np.ndarray]
+    :param image_np: List of image_np to save.
+    :type image_np: List[np.ndarray]
     :param image_infos: List of image infos to get image IDs.
-        Image ID will be used as a dataset name. Length of this list should be the same as vectors.
+        Image ID will be used as a dataset name. Length of this list should be the same as image_np.
     :type image_infos: List[ImageInfoLite]
     :param project_id: ID of the project. It will be used as a file name.
     :type project_id: int
     """
 
     with h5py.File(get_hdf5_path(project_id), "a") as file:
-        for vector, image_info in zip(vectors, image_infos):
+        for image_np, image_info in zip(image_nps, image_infos):
             # Using Dataset ID as a group name.
             # Require method works as get or create, to speed up the process.
             # If group already exists, it will be returned, otherwise created.
             group = file.require_group(str(image_info.dataset_id))
-            # For each vector, we create a dataset with ID which comes from image ID.
+            # For each numpy array, we create a dataset with ID which comes from image ID.
             # Same, require method works as get or create.
-            # So if vector for image with specific ID already exists, it will be overwritten.
-            group.require_dataset(
-                str(image_info.id), data=vector, shape=vector.shape, dtype=vector.dtype
+            # So if numpy_array for image with specific ID already exists, it will be overwritten.
+            dataset = group.require_dataset(
+                str(image_info.id),
+                data=image_np,
+                shape=image_np.shape,
+                dtype=image_np.dtype,
             )
 
-    # Debug read the file and print number of datasets in it.
-    with h5py.File(get_hdf5_path(project_id), "r") as file:
-        print(f"Number of datasets in the file: {len(file)}")
+            dataset.attrs[g.HDF5_URL_KEY] = image_info.full_url
 
 
 def get_hdf5_path(project_id: int):
@@ -174,7 +193,7 @@ async def get_vectors(image_urls: List[str]) -> List[np.ndarray]:
 
 
 @timer
-def resize_nps(nps: List[np.ndarray], size: int) -> List[np.ndarray]:
+def rgb_to_rgba(nps: List[np.ndarray], size: int) -> List[np.ndarray]:
     """Resize list of numpy arrays to the square images with alpha channel.
 
     :param nps: List of numpy arrays to resize.
@@ -184,10 +203,10 @@ def resize_nps(nps: List[np.ndarray], size: int) -> List[np.ndarray]:
     :return: List of resized images with alpha channel.
     :rtype: List[np.ndarray]
     """
-    return [_resize_to_rgba(np_image, size) for np_image in nps]
+    return [_rgb_to_rgba(np_image, size) for np_image in nps]
 
 
-def _resize_to_rgba(rgb: np.ndarray, size: int) -> np.ndarray:
+def _rgb_to_rgba(rgb: np.ndarray, size: int) -> np.ndarray:
     """Resizing RGB image while keeping the aspect ratio and adding alpha channel.
     Returns square image with alpha channel.
 
@@ -275,7 +294,11 @@ def get_datasets(api: sly.Api, project_id: int) -> List[sly.DatasetInfo]:
 
 @timer
 def get_image_infos(
-    api: sly.Api, size: int, dataset_id: int = None, image_ids: List[int] = None
+    api: sly.Api,
+    cas_size: int,
+    hdf5_size: int,
+    dataset_id: int = None,
+    image_ids: List[int] = None,
 ) -> List[ImageInfoLite]:
     """Returns lite version of image infos to cut off unnecessary data.
     Uses either dataset_id or image_ids to get image infos.
@@ -284,8 +307,10 @@ def get_image_infos(
 
     :param api: Instance of supervisely API.
     :type api: sly.Api
-    :param size: Size of the images to resize.
-    :type size: int
+    :param cas_size: Size of the image for CAS, it will be added to URL.
+    :type cas_size: int
+    :param hdf5_size: Size of the image for HDF5, it will be added to URL.
+    :type hdf5_size: int
     :param dataset_id: ID of the dataset to get images from.
     :type dataset_id: int, optional
     :param image_ids: List of image IDs to get image infos.
@@ -303,11 +328,18 @@ def get_image_infos(
         ImageInfoLite(
             id=image_info.id,
             dataset_id=image_info.dataset_id,
-            url=api.image.resize_image_url(
+            full_url=image_info.full_storage_url,
+            cas_url=api.image.resize_image_url(
                 image_info.full_storage_url,
                 method="fit",
-                width=size,
-                height=size,
+                width=cas_size,
+                height=cas_size,
+            ),
+            hdf5_url=api.image.resize_image_url(
+                image_info.full_storage_url,
+                method="fit",
+                width=hdf5_size,
+                height=hdf5_size,
             ),
             updated_at=image_info.updated_at,
         )

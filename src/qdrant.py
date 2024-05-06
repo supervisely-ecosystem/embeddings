@@ -1,10 +1,13 @@
-from typing import Any, Dict, List
+from math import sqrt
+from random import choice
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import supervisely as sly
 from qdrant_client import AsyncQdrantClient, QdrantClient
 from qdrant_client.http.exceptions import UnexpectedResponse
 from qdrant_client.models import Batch, CollectionInfo, Distance, VectorParams
+from sklearn.cluster import KMeans
 
 import src.globals as g
 from src.utils import ImageInfoLite, timer, with_retries
@@ -149,3 +152,53 @@ async def search(
         with_payload=True,
     )
     return [ImageInfoLite(point.id, **point.payload) for point in points]
+
+
+@with_retries()
+@timer
+async def get_items(
+    collection_name: str, limit: int = None
+) -> Tuple[List[ImageInfoLite], List[np.ndarray]]:
+    if not limit:
+        limit = pow(2, 31)
+    points, _ = await client.scroll(
+        collection_name, limit=limit, with_payload=True, with_vectors=True
+    )
+    sly.logger.debug(
+        f"Retrieved {len(points)} points from collection {collection_name}."
+    )
+    return [ImageInfoLite(point.id, **point.payload) for point in points], [
+        point.vector for point in points
+    ]
+
+
+@timer
+async def diverse_kmeans(
+    collection_name: str, num_images: int, num_clusters: int = 3
+) -> List[np.ndarray]:
+    image_infos, vectors = await get_items(collection_name)
+    if not num_clusters:
+        num_clusters = int(sqrt(len(image_infos) / 2))
+        sly.logger.debug(f"Number of clusters is set to {num_clusters}.")
+    kmeans = KMeans(n_clusters=num_clusters).fit(vectors)
+    labels = kmeans.labels_
+    sly.logger.debug(f"KMeans clustering with {num_clusters} clusters is done.")
+
+    diverse_images = []
+    while len(diverse_images) < num_images:
+        for cluster_id in set(labels):
+            cluster_image_infos = [
+                image_info
+                for image_info, label in zip(image_infos, labels)
+                if label == cluster_id
+            ]
+            if not cluster_image_infos:
+                continue
+
+            image_info = choice(cluster_image_infos)
+            diverse_images.append(image_info)
+            image_infos.remove(image_info)
+            if len(diverse_images) == num_images:
+                break
+
+    return diverse_images

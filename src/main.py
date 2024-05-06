@@ -97,6 +97,7 @@ async def search(request: Request):
     try:
         context = request.state.context
     except Exception:
+        # For development purposes.
         context = request.get("context")
     project_id = context.get("project_id")
     query = context.get("query")
@@ -107,6 +108,27 @@ async def search(request: Request):
 
     image_infos = await qdrant.search(project_id, query_vectors[0], limit)
     sly.logger.debug(f"Found {len(image_infos)} similar images.")
+
+    return image_infos
+
+
+@server.post("/diverse")
+@timer
+async def diverse(request: Request):
+    try:
+        context = request.state.context
+    except Exception:
+        # For development purposes.
+        context = request.get("context")
+    project_id = context.get("project_id")
+    method = context.get("method")
+    limit = context.get("limit", 10)
+    sly.logger.debug(
+        f"Generating diverse population for project {project_id} with method {method}"
+    )
+
+    image_infos = await qdrant.diverse_kmeans(project_id, limit)
+    sly.logger.debug(f"Generated {len(image_infos)} diverse images.")
 
     return image_infos
 

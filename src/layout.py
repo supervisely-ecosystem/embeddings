@@ -1,5 +1,4 @@
-from collections import defaultdict
-from typing import Dict, List
+from typing import List
 
 from supervisely.app.fastapi.utils import run_sync
 from supervisely.app.widgets import (
@@ -7,12 +6,12 @@ from supervisely.app.widgets import (
     Card,
     Container,
     Field,
+    Flexbox,
     GridGallery,
     Input,
     InputNumber,
 )
 
-from src.globals import api
 from src.utils import ImageInfoLite
 
 PROJECT_ID = 298119
@@ -22,13 +21,15 @@ text_input_field = Field(text_input, title="Query", description="Enter a text qu
 limit_input = InputNumber(10, min=1, max=100, step=1)
 limit_input_field = Field(limit_input, title="Limit", description="Enter a limit.")
 search_button = Button("Search")
+diverse_kmeans_button = Button("Diverse KMeans")
+buttons_flexbox = Flexbox([search_button, diverse_kmeans_button])
 grid_gallery = GridGallery(columns_number=5)
 
 layout = Card(
     "QDrant search",
     "Enter a text query to search for similar images.",
     content=Container(
-        [text_input_field, limit_input_field, search_button, grid_gallery]
+        [text_input_field, limit_input_field, buttons_flexbox, grid_gallery]
     ),
 )
 
@@ -50,17 +51,31 @@ def on_search_button_click():
 
     from src.main import search
 
-    image_infos = run_sync(search(request_json))
-    grouped_dict = image_infos_to_dict(image_infos)
+    image_infos: List[ImageInfoLite] = run_sync(search(request_json))
+    assert len(image_infos) == len(set(image_infos)), "Duplicate images found."
 
-    for dataset_id, image_ids in grouped_dict.items():
-        image_infos = api.image.get_info_by_id_batch(image_ids)
-        for image_info in image_infos:
-            grid_gallery.append(image_info.full_storage_url)
-
-
-def image_infos_to_dict(image_infos: List[ImageInfoLite]) -> Dict[int, List[int]]:
-    grouped_dict = defaultdict(list)
     for image_info in image_infos:
-        grouped_dict[image_info.dataset_id].append(image_info.id)
-    return grouped_dict
+        grid_gallery.append(image_info.full_url)
+
+
+@diverse_kmeans_button.click
+def on_diverse_kmeans_button_click():
+    grid_gallery.clean_up()
+
+    limit = limit_input.get_value()
+
+    request_json = {
+        "context": {
+            "project_id": PROJECT_ID,
+            "method": "kmeans",
+            "limit": limit,
+        }
+    }
+
+    from src.main import diverse
+
+    image_infos: List[ImageInfoLite] = run_sync(diverse(request_json))
+    assert len(image_infos) == len(set(image_infos)), "Duplicate images found."
+
+    for image_info in image_infos:
+        grid_gallery.append(image_info.full_url)

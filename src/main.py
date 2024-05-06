@@ -11,12 +11,12 @@ from fastapi import Request
 from pympler import asizeof
 from supervisely._utils import resize_image_url
 
-import src.atlas as atlas
 import src.cas as cas
 import src.globals as g
 import src.pointclouds as pointclouds
 import src.qdrant as qdrant
 import src.thumbnails as thumbnails
+from src.atlas import save_atlas
 from src.utils import ImageInfoLite, rgb_to_rgba, timer
 
 app = sly.Application()
@@ -26,10 +26,6 @@ server = app.get_server()
 @server.post("/create_atlas")
 @timer
 async def create_atlas(request: Request):
-    # ! DEBUG, will receive instance of API in request later.
-    # api = g.api
-    # end of debug
-
     # Step 1: Unpack data from the request.
     context = request.state.context
     project_id = context.get("project_id")
@@ -58,11 +54,8 @@ async def create_atlas(request: Request):
 @server.post("/embeddings")
 @timer
 async def create_embeddings(request: Request):
-    # ! DEBUG, will receive instance of API in request later.
-    api = g.api
-    # end of debug
-
     # Step 1: Unpack data from the request.
+    api = _get_api_from_request(request)
     context = request.state.context
     project_id = context.get("project_id")
     # If context contains list of image_ids it means that we're
@@ -106,9 +99,7 @@ async def process_atlas(
         )
 
         # Get atlas image and map. Image is a numpy array, map is a list of dictionaries.
-        page_image, page_map = await atlas.save_atlas(
-            g.ATLAS_SIZE, g.IMAGE_SIZE_FOR_ATLAS, tiles
-        )
+        page_image, page_map = save_atlas(g.ATLAS_SIZE, g.IMAGE_SIZE_FOR_ATLAS, tiles)
 
         # Add page elements to the vector and atlas maps, which will be saved to the files
         # without splitting into pages.
@@ -273,3 +264,18 @@ def get_image_infos(
         )
         for image_info in image_infos
     ]
+
+
+def _get_api_from_request(request: Request) -> sly.Api:
+    """Returns API instance from the request. In development mode, API instance
+    is stored in the global variable, in production mode it's stored in the state.
+
+    :param request: FastAPI request instance.
+    :type request: Request
+    :return: Instance of supervisely API.
+    :rtype: sly.Api
+    """
+    if sly.is_development():
+        return g.api
+    else:
+        return request.state.api

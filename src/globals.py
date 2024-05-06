@@ -10,9 +10,7 @@ if sly.is_development():
 
 # ! DEBUG! Remove team_id and workspace_id from the environment variables.
 # Also, remove creating sly.Api instance.
-# region envvars
-team_id = sly.io.env.team_id()
-workspace_id = sly.io.env.workspace_id()
+# # region envvars
 
 qdrant_host = os.getenv("QDRANT_HOST")
 cas_host = os.getenv("CAS_HOST")
@@ -22,10 +20,11 @@ if not qdrant_host:
 if not cas_host:
     raise ValueError("CAS_HOST is not set in the environment variables")
 
-api: sly.Api = sly.Api.from_env()
-sly.logger.debug(
-    f"Connected to {api.server_address}, team_id={team_id}, workspace_id={workspace_id}"
-)
+if sly.is_development():
+    api: sly.Api = sly.Api.from_env()
+    sly.logger.debug(f"Connected to {api.server_address}.")
+else:
+    api = None
 
 # region constants
 STORAGE_DIR = sly.env.agent_storage()

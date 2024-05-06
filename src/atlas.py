@@ -22,7 +22,7 @@ def tiles_in_atlas(atlas_size: int, tile_size: int) -> int:
 
 
 @timer
-async def save_atlas(
+def save_atlas(
     atlas_size: int, tile_size: int, tile_infos: List[TileInfo]
 ) -> Tuple[np.ndarray, List[Dict[str, Union[str, int]]]]:
     # Receives a list of 4-channel RGBA numpy arrays and returns a single 4-channel RGBA numpy array.

@@ -102,7 +102,9 @@ async def process_atlas(
         )
 
         # Get atlas image and map. Image is a numpy array, map is a list of dictionaries.
-        page_image, page_map = save_atlas(g.ATLAS_SIZE, g.IMAGE_SIZE_FOR_ATLAS, tiles)
+        page_image, page_map = save_atlas(
+            g.ATLAS_SIZE, g.IMAGE_SIZE_FOR_ATLAS, tiles, atlas_id=idx
+        )
 
         # Add page elements to the vector and atlas maps, which will be saved to the files
         # without splitting into pages.

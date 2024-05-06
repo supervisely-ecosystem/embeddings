@@ -23,7 +23,7 @@ def tiles_in_atlas(atlas_size: int, tile_size: int) -> int:
 
 @timer
 def save_atlas(
-    atlas_size: int, tile_size: int, tile_infos: List[TileInfo]
+    atlas_size: int, tile_size: int, tile_infos: List[TileInfo], atlas_id: int
 ) -> Tuple[np.ndarray, List[Dict[str, Union[str, int]]]]:
     # Receives a list of 4-channel RGBA numpy arrays and returns a single 4-channel RGBA numpy array.
     # Tiles of the atlas are filled row by row from the top left corner.
@@ -58,6 +58,7 @@ def save_atlas(
         atlas_map.append(
             {
                 "id": idx,
+                "atlas_id": atlas_id,
                 "unitSize": tile_info.unitSize,
                 "url": tile_info.url,
                 "image_id": tile_info.id,

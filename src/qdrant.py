@@ -20,7 +20,6 @@ except Exception as e:
 
 
 @with_retries()
-@timer
 async def delete_collection(collection_name: str):
     sly.logger.debug(f"Deleting collection {collection_name}...")
     try:
@@ -90,7 +89,6 @@ async def upsert(
 
 
 @with_retries()
-@timer
 async def get_diff(
     collection_name: str, image_infos: List[ImageInfoLite]
 ) -> List[ImageInfoLite]:

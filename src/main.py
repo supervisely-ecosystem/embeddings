@@ -1,15 +1,11 @@
-import asyncio
 import json
 import os
 from typing import Dict, List, Tuple
 
-import aiohttp
 import cv2
-import numpy as np
 import supervisely as sly
 from fastapi import Request
 from pympler import asizeof
-from supervisely._utils import resize_image_url
 
 import src.cas as cas
 import src.globals as g
@@ -17,7 +13,14 @@ import src.pointclouds as pointclouds
 import src.qdrant as qdrant
 import src.thumbnails as thumbnails
 from src.atlas import save_atlas
-from src.utils import ImageInfoLite, rgb_to_rgba, timer
+from src.utils import (
+    _get_api_from_request,
+    download_items,
+    get_datasets,
+    get_image_infos,
+    rgb_to_rgba,
+    timer,
+)
 
 app = sly.Application()
 server = app.get_server()
@@ -78,7 +81,7 @@ async def create_embeddings(request: Request):
     if not image_ids:
         # Step 3A: If image_ids are not provided, get all datasets from the project.
         # Then iterate over datasets and process images from each dataset.
-        datasets = await asyncio.to_thread(get_datasets, api, project_id)
+        datasets = await get_datasets(api, project_id)
         for dataset in datasets:
             await process_images(api, project_id, dataset_id=dataset.id)
     else:
@@ -124,8 +127,7 @@ async def process_atlas(
 async def process_images(
     api: sly.Api, project_id: int, dataset_id: int = None, image_ids: List[int] = None
 ):
-    image_infos = await asyncio.to_thread(
-        get_image_infos,
+    image_infos = await get_image_infos(
         api,
         g.IMAGE_SIZE_FOR_CAS,
         g.IMAGE_SIZE_FOR_ATLAS,
@@ -166,116 +168,3 @@ async def process_images(
             [image_info.id for image_info in image_batch],
             updated_at=[image_info.updated_at for image_info in image_batch],
         )
-
-
-@timer
-async def download_items(urls: List[str]) -> List[np.ndarray]:
-    """Asynchronously download images from the list of URLs.
-
-    :param urls: List of URLs to download images from.
-    :type urls: List[str]
-    :return: List of downloaded images as numpy arrays.
-    :rtype: List[np.ndarray]
-    """
-    async with aiohttp.ClientSession() as session:
-        return await asyncio.gather(*[download_item(session, url) for url in urls])
-
-
-async def download_item(session: aiohttp.ClientSession, url: str) -> np.ndarray:
-    """Asynchronously download image from the URL and return it as numpy array.
-
-    :param session: Instance of aiohttp ClientSession.
-    :type session: aiohttp.ClientSession
-    :param url: URL to download image from.
-    :type url: str
-    :return: Downloaded image as numpy array.
-    :rtype: np.ndarray
-    """
-    async with session.get(url) as response:
-        image_bytes = await response.read()
-
-    return sly.image.read_bytes(image_bytes)
-
-
-@timer
-def get_datasets(api: sly.Api, project_id: int) -> List[sly.DatasetInfo]:
-    """Returns list of datasets from the project.
-
-    :param api: Instance of supervisely API.
-    :type api: sly.Api
-    :param project_id: ID of the project to get datasets from.
-    :type project_id: int
-    :return: List of datasets.
-    :rtype: List[sly.DatasetInfo]
-    """
-    return api.dataset.get_list(project_id)
-
-
-@timer
-def get_image_infos(
-    api: sly.Api,
-    cas_size: int,
-    hdf5_size: int,
-    dataset_id: int = None,
-    image_ids: List[int] = None,
-) -> List[ImageInfoLite]:
-    """Returns lite version of image infos to cut off unnecessary data.
-    Uses either dataset_id or image_ids to get image infos.
-    If dataset_id is provided, it will be used to get all images from the dataset.
-    If image_ids are provided, they will be used to get image infos.
-
-    :param api: Instance of supervisely API.
-    :type api: sly.Api
-    :param cas_size: Size of the image for CAS, it will be added to URL.
-    :type cas_size: int
-    :param hdf5_size: Size of the image for HDF5, it will be added to URL.
-    :type hdf5_size: int
-    :param dataset_id: ID of the dataset to get images from.
-    :type dataset_id: int, optional
-    :param image_ids: List of image IDs to get image infos.
-    :type image_ids: List[int], optional
-    :return: List of lite version of image infos.
-    :rtype: List[ImageInfoLite]
-    """
-
-    if dataset_id:
-        image_infos = api.image.get_list(dataset_id)
-    elif image_ids:
-        image_infos = api.image.get_info_by_id_batch(image_ids)
-
-    return [
-        ImageInfoLite(
-            id=image_info.id,
-            dataset_id=image_info.dataset_id,
-            full_url=image_info.full_storage_url,
-            cas_url=resize_image_url(
-                image_info.full_storage_url,
-                method="fit",
-                width=cas_size,
-                height=cas_size,
-            ),
-            hdf5_url=resize_image_url(
-                image_info.full_storage_url,
-                method="fit",
-                width=hdf5_size,
-                height=hdf5_size,
-            ),
-            updated_at=image_info.updated_at,
-        )
-        for image_info in image_infos
-    ]
-
-
-def _get_api_from_request(request: Request) -> sly.Api:
-    """Returns API instance from the request. In development mode, API instance
-    is stored in the global variable, in production mode it's stored in the state.
-
-    :param request: FastAPI request instance.
-    :type request: Request
-    :return: Instance of supervisely API.
-    :rtype: sly.Api
-    """
-    if sly.is_development():
-        return g.api
-    else:
-        return request.state.api

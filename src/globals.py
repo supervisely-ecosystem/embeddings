@@ -35,6 +35,7 @@ IMAGE_SIZE_FOR_ATLAS = 32
 ATLAS_SIZE = pow(2, 13)
 HDF5_URL_KEY = "url"
 DEFAULT_PCD_FIELDS = ["x", "y", "z"]
+QDRANT_MAX_RETRIES = 3
 # endregion
 sly.fs.mkdir(HDF5_DIR)
 sly.fs.mkdir(ATLAS_DIR, remove_content_if_exists=True)

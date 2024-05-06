@@ -5,8 +5,9 @@ import supervisely as sly
 from clip_client import Client
 
 import src.globals as g
-from src.utils import timer
+from src.utils import timer, with_retries
 
+# TODO: Return client on demand.
 client = Client(f"grpc://{g.cas_host}")
 
 try:
@@ -16,6 +17,7 @@ except Exception as e:
     sly.logger.error(f"Failed to connect to CAS at {g.cas_host}: {e}")
 
 
+@with_retries(retries=5, sleep_time=2)
 @timer
 async def get_vectors(image_urls: List[str]) -> List[np.ndarray]:
     """Use CAS to get vectors from the list of images.

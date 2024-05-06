@@ -9,12 +9,13 @@ import numpy as np
 import supervisely as sly
 from fastapi import Request
 from pympler import asizeof
+from supervisely._utils import resize_image_url
 
 import src.atlas as atlas
 import src.cas as cas
 import src.globals as g
 import src.qdrant as qdrant
-from src.thumbnails import get_hdf5_path, save_to_hdf5
+import src.thumbnails as thumbnails
 from src.utils import ImageInfoLite, rgb_to_rgba, timer
 
 app = sly.Application()
@@ -34,7 +35,7 @@ async def create_atlas(request: Request):
     sly.logger.info(f"Creating atlas for project {project_id}...")
 
     # Step 2: Get number of tiles in the atlas.
-    num_tiles = atlas.tiles_in_atlas(g.ATLAS_SIZE, 512)
+    num_tiles = atlas.tiles_in_atlas(g.ATLAS_SIZE, 128)
     sly.logger.debug(f"Full atlas should be containing {num_tiles} tiles.")
 
     # Step 2.1: Prepare empty vector and atlas maps.
@@ -43,14 +44,14 @@ async def create_atlas(request: Request):
 
     # Step 3: Get tiles from the HDF5 file and save them into separate atlas images.
     for idx, tiles in enumerate(
-        atlas.get_tiles_from_hdf5(get_hdf5_path(project_id), num_tiles)
+        thumbnails.get_tiles_from_hdf5(thumbnails.get_hdf5_path(project_id), num_tiles)
     ):
         sly.logger.debug(
             f"Processing {idx + 1} batch of tiles. Received {len(tiles)} tiles."
         )
 
         # Step 4: Get atlas image and map. Image is a numpy array, map is a list of dictionaries.
-        page_image, page_map = await atlas.save_atlas(g.ATLAS_SIZE, 512, tiles)
+        page_image, page_map = await atlas.save_atlas(g.ATLAS_SIZE, 128, tiles)
 
         # Step 5: Add page elements to the vector and atlas maps, which will be saved to the files
         # without splitting into pages.
@@ -61,16 +62,21 @@ async def create_atlas(request: Request):
             # Checking how much memory the vector map takes.
             vector_map_size = asizeof.asizeof(vector_map) / 1024 / 1024
             sly.logger.debug(f"Vector map size: {vector_map_size:.2f} MB")
-
+        project_atlas_dir = os.path.join(g.ATLAS_DIR, str(project_id))
+        sly.fs.mkdir(project_atlas_dir)
         # Step 6.1: Convert RGBA to BGRA for compatibility with OpenCV.
         page_image = cv2.cvtColor(page_image, cv2.COLOR_RGBA2BGRA)
         # Step 6.2: Save atlas image to the file.
-        cv2.imwrite(os.path.join(g.ATLAS_DIR, f"{project_id}_{idx}.png"), page_image)
+        cv2.imwrite(
+            os.path.join(project_atlas_dir, f"{project_id}_{idx}.png"), page_image
+        )
 
     # Step 7: Save atlas map to the JSON file.
+    project_atlas_dir = os.path.join(g.ATLAS_DIR, str(project_id))
+    sly.fs.mkdir(project_atlas_dir)
     json.dump(
         atlas_map,
-        open(os.path.join(g.ATLAS_DIR, f"{project_id}.json"), "w"),
+        open(os.path.join(project_atlas_dir, f"{project_id}.json"), "w"),
         indent=4,
     )
 
@@ -98,8 +104,10 @@ async def create_embeddings(request: Request):
 
     if force:
         # Step 1.1: If force is True, delete the collection and recreate it.
-        sly.logger.debug(f"Force is True, deleting collection {project_id}.")
+        sly.logger.debug(f"Force enabled, deleting collection {project_id}.")
         await qdrant.delete_collection(project_id)
+        sly.logger.debug(f"Deleting HDF5 file for project {project_id}.")
+        thumbnails.remove_hdf5(project_id)
 
     # Step 2: Ensure collection exists in Qdrant.
     await qdrant.get_or_create_collection(project_id)
@@ -148,7 +156,7 @@ async def process_images(
         nps_batch = rgb_to_rgba(nps_batch, g.IMAGE_SIZE_FOR_ATLAS)
 
         # Step 7: Save images to hdf5.
-        save_to_hdf5(nps_batch, image_batch, project_id)
+        thumbnails.save_to_hdf5(nps_batch, image_batch, project_id)
 
         # Step 8: Get vectors from images.
         vectors_batch = await cas.get_vectors(
@@ -244,13 +252,13 @@ def get_image_infos(
             id=image_info.id,
             dataset_id=image_info.dataset_id,
             full_url=image_info.full_storage_url,
-            cas_url=api.image.resize_image_url(
+            cas_url=resize_image_url(
                 image_info.full_storage_url,
                 method="fit",
                 width=cas_size,
                 height=cas_size,
             ),
-            hdf5_url=api.image.resize_image_url(
+            hdf5_url=resize_image_url(
                 image_info.full_storage_url,
                 method="fit",
                 width=hdf5_size,

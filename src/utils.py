@@ -2,7 +2,7 @@ import asyncio
 from collections import namedtuple
 from functools import wraps
 from time import perf_counter
-from typing import List
+from typing import Callable, List
 
 import cv2
 import numpy as np
@@ -25,7 +25,47 @@ LOG_THRESHOLD = 0.02
 SHOULD_NOT_BE_ASYNC_THRESHOLD = 0.1
 
 
-def timer(func):
+def with_retries(retries: int = 3, sleep_time: int = 1) -> Callable:
+    """Decorator to retry the function in case of an exception.
+
+    :param retries: Number of retries.
+    :type retries: int
+    :param sleep_time: Time to sleep between retries.
+    :type sleep_time: int
+    :return: Decorator.
+    :rtype: Callable
+    """
+
+    def retry_decorator(func):
+        @wraps(func)
+        async def async_function_with_retries(*args, **kwargs):
+            for _ in range(retries):
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    sly.logger.debug(
+                        f"Failed to execute {func.__name__}, retrying. Error: {str(e)}"
+                    )
+                    await asyncio.sleep(sleep_time)
+            raise Exception(
+                f"Failed to execute {func.__name__} after {retries} retries."
+            )
+
+        return async_function_with_retries
+
+    return retry_decorator
+
+
+def timer(func: Callable) -> Callable:
+    """Decorator to measure the execution time of the function.
+    Works with both async and sync functions.
+
+    :param func: Function to measure the execution time of.
+    :type func: Callable
+    :return: Decorated function.
+    :rtype: Callable
+    """
+
     if asyncio.iscoroutinefunction(func):
 
         @wraps(func)

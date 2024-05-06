@@ -7,8 +7,9 @@ from qdrant_client.http.exceptions import UnexpectedResponse
 from qdrant_client.models import Batch, CollectionInfo, Distance, VectorParams
 
 import src.globals as g
-from src.utils import ImageInfoLite, timer
+from src.utils import ImageInfoLite, timer, with_retries
 
+# TODO: Return client on demand.
 client = AsyncQdrantClient(g.qdrant_host)
 
 try:
@@ -18,6 +19,7 @@ except Exception as e:
     sly.logger.error(f"Failed to connect to Qdrant at {g.qdrant_host} with error: {e}")
 
 
+@with_retries()
 @timer
 async def delete_collection(collection_name: str):
     sly.logger.debug(f"Deleting collection {collection_name}...")
@@ -28,6 +30,7 @@ async def delete_collection(collection_name: str):
         sly.logger.debug(f"Collection {collection_name} wasn't found while deleting.")
 
 
+@with_retries()
 @timer
 async def get_or_create_collection(
     collection_name: str, size: int = 512, distance: Distance = Distance.COSINE
@@ -45,6 +48,7 @@ async def get_or_create_collection(
     return collection
 
 
+@with_retries()
 @timer
 async def get_vectors(collection_name: str, image_ids: List[int]) -> List[np.ndarray]:
     points = await client.retrieve(
@@ -53,18 +57,28 @@ async def get_vectors(collection_name: str, image_ids: List[int]) -> List[np.nda
     return [point.vector for point in points]
 
 
+@with_retries(retries=5, sleep_time=2)
 @timer
 async def upsert(
     collection_name: str, vectors: List[np.ndarray], ids: List[int], **kwargs
 ):
-    await client.upsert(
-        collection_name,
-        Batch(
-            vectors=vectors,
-            ids=ids,
-            payloads=await get_payloads(kwargs),
-        ),
-    )
+    retry = g.QDRANT_MAX_RETRIES
+    while retry > 0:
+        try:
+            await client.upsert(
+                collection_name,
+                Batch(
+                    vectors=vectors,
+                    ids=ids,
+                    payloads=get_payloads(kwargs),
+                ),
+            )
+            break
+        except Exception as e:
+            sly.logger.warning(
+                f"Failed to upsert vectors to collection {collection_name} with error: {e}"
+            )
+            retry -= 1
     if sly.is_development():
         # By default qdrant should overwrite vectors with the same ids
         # so this line is only needed to check if vectors were upserted correctly.
@@ -75,6 +89,7 @@ async def upsert(
         )
 
 
+@with_retries()
 @timer
 async def get_diff(
     collection_name: str, image_infos: List[ImageInfoLite]
@@ -89,7 +104,7 @@ async def get_diff(
         f"Retrieved {len(points)} points from collection {collection_name}"
     )
 
-    diff = await _diff(image_infos, points)
+    diff = _diff(image_infos, points)
 
     sly.logger.debug(f"Found {len(diff)} points that need to be updated.")
     if sly.is_development():
@@ -104,7 +119,7 @@ async def get_diff(
 
 
 @timer
-async def _diff(
+def _diff(
     image_infos: List[ImageInfoLite], points: List[Dict[str, Any]]
 ) -> List[ImageInfoLite]:
     # If the point with the same id doesn't exist in the collection, it will be added to the diff.
@@ -122,6 +137,6 @@ async def _diff(
 
 
 @timer
-async def get_payloads(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+def get_payloads(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     POSSIBLE_KEYS = ["updated_at"]
     return [{key: entry} for key in POSSIBLE_KEYS if key in data for entry in data[key]]

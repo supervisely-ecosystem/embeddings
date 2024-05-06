@@ -59,25 +59,19 @@ async def get_vectors(collection_name: str, image_ids: List[int]) -> List[np.nda
 @with_retries(retries=5, sleep_time=2)
 @timer
 async def upsert(
-    collection_name: str, vectors: List[np.ndarray], ids: List[int], **kwargs
+    collection_name: str,
+    vectors: List[np.ndarray],
+    image_infos: List[ImageInfoLite],
 ):
-    retry = g.QDRANT_MAX_RETRIES
-    while retry > 0:
-        try:
-            await client.upsert(
-                collection_name,
-                Batch(
-                    vectors=vectors,
-                    ids=ids,
-                    payloads=get_payloads(kwargs),
-                ),
-            )
-            break
-        except Exception as e:
-            sly.logger.warning(
-                f"Failed to upsert vectors to collection {collection_name} with error: {e}"
-            )
-            retry -= 1
+    await client.upsert(
+        collection_name,
+        Batch(
+            vectors=vectors,
+            ids=[image_info.id for image_info in image_infos],
+            payloads=get_payloads(image_infos),
+        ),
+    )
+
     if sly.is_development():
         # By default qdrant should overwrite vectors with the same ids
         # so this line is only needed to check if vectors were upserted correctly.
@@ -135,6 +129,23 @@ def _diff(
 
 
 @timer
-def get_payloads(data: Dict[str, Any]) -> List[Dict[str, Any]]:
-    POSSIBLE_KEYS = ["updated_at"]
-    return [{key: entry} for key in POSSIBLE_KEYS if key in data for entry in data[key]]
+def get_payloads(image_infos: List[ImageInfoLite]) -> List[Dict[str, Any]]:
+    payloads = [
+        {k: v for k, v in image_info._asdict().items() if k != "id"}
+        for image_info in image_infos
+    ]
+    return payloads
+
+
+@with_retries()
+@timer
+async def search(
+    collection_name: str, query_vector: np.ndarray, limit: int
+) -> List[ImageInfoLite]:
+    points = await client.search(
+        collection_name,
+        query_vector,
+        limit=limit,
+        with_payload=True,
+    )
+    return [ImageInfoLite(point.id, **point.payload) for point in points]

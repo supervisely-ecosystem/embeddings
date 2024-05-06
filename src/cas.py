@@ -19,13 +19,14 @@ except Exception as e:
 
 @with_retries(retries=5, sleep_time=2)
 @timer
-async def get_vectors(image_urls: List[str]) -> List[np.ndarray]:
-    """Use CAS to get vectors from the list of images.
+async def get_vectors(queries: List[str]) -> List[np.ndarray]:
+    """Use CAS to get vectors from the list of queries.
+    List of queries is a list of URLs for images or text prompts.
 
-    :param image_urls: List of URLs to get vectors from.
-    :type image_urls: List[str]
+    :param queries: List of queries (URLs for images or text prompts).
+    :type queries: List[str]
     :return: List of vectors.
     :rtype: List[np.ndarray]
     """
-    vectors = await client.aencode(image_urls)
+    vectors = await client.aencode(queries)
     return [vector.tolist() for vector in vectors]

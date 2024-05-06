@@ -13,6 +13,7 @@ import src.pointclouds as pointclouds
 import src.qdrant as qdrant
 import src.thumbnails as thumbnails
 from src.atlas import save_atlas
+from src.layout import layout
 from src.utils import (
     _get_api_from_request,
     download_items,
@@ -22,7 +23,8 @@ from src.utils import (
     timer,
 )
 
-app = sly.Application()
+layout = layout if sly.is_development() else None
+app = sly.Application(layout=layout)
 server = app.get_server()
 
 
@@ -87,6 +89,26 @@ async def create_embeddings(request: Request):
     else:
         # Step 3B: If image_ids are provided, process images with specific IDs.
         await process_images(api, project_id, image_ids=image_ids)
+
+
+@server.post("/search")
+@timer
+async def search(request: Request):
+    try:
+        context = request.state.context
+    except Exception:
+        context = request.get("context")
+    project_id = context.get("project_id")
+    query = context.get("query")
+    limit = context.get("limit", 10)
+    sly.logger.debug(f"Searching for {query} in project {project_id}...")
+
+    query_vectors = await cas.get_vectors([query])
+
+    image_infos = await qdrant.search(project_id, query_vectors[0], limit)
+    sly.logger.debug(f"Found {len(image_infos)} similar images.")
+
+    return image_infos
 
 
 @timer
@@ -167,6 +189,5 @@ async def process_images(
         await qdrant.upsert(
             project_id,
             vectors_batch,
-            [image_info.id for image_info in image_batch],
-            updated_at=[image_info.updated_at for image_info in image_batch],
+            image_batch,
         )

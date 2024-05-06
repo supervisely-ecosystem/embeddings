@@ -1,6 +1,7 @@
 import os
 
 import supervisely as sly
+from aiocron import crontab
 from dotenv import load_dotenv
 
 if sly.is_development():
@@ -44,3 +45,15 @@ sly.logger.debug(
 )
 sly.logger.debug(f"Storage directory: {STORAGE_DIR}, HDF5 directory: {HDF5_DIR}")
 sly.logger.debug(f"Atlas directory: {ATLAS_DIR}, Atlas size: {ATLAS_SIZE}")
+
+hdf5_storage_check_cron = "*/1 * * * *" if sly.is_development() else "0 * * * *"
+
+
+@crontab(hdf5_storage_check_cron)
+def log_size_of_hdf_storage() -> None:
+    """Log the size of the HDF5 storage in megabytes."""
+    try:
+        size = sly.fs.get_directory_size(HDF5_DIR) / 1024 / 1024
+        sly.logger.info(f"HDF5 storage size: {size:.2f} MB")
+    except Exception:
+        pass

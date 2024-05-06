@@ -99,6 +99,8 @@ async def create_pointcloud(
 
     if sly.is_development():
         # Debugging information about the point cloud. Will be visible in the development mode.
-        cloud = PointCloud.from_path(os.path.join(g.ATLAS_DIR, f"{project_id}.pcd"))
+        cloud = PointCloud.from_path(
+            os.path.join(project_atlas_dir, f"{project_id}.pcd")
+        )
         sly.logger.debug(f"Number of points in the cloud: {cloud.points}")
         sly.logger.debug(f"Fields in the PCD file: {cloud.fields}")

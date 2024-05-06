@@ -5,6 +5,7 @@ import h5py
 import numpy as np
 import supervisely as sly
 
+import src.atlas as atlas
 import src.globals as g
 from src.utils import ImageInfoLite, TileInfo, timer
 
@@ -70,18 +71,32 @@ def get_hdf5_path(project_id: int) -> str:
 
 @timer
 def get_tiles_from_hdf5(
-    hdf5_path: str, batch_size: int
+    hdf5_path: str = None,
+    project_id: int = None,
+    batch_size: int = None,
 ) -> Generator[List[TileInfo], None, None]:
     """Reads HDF5 file from given path and returns a generator of numpy arrays
     split into batches of given size. At the end yields the remaining items in the batch
 
-    :param hdf5_path: path to the HDF5 file
-    :type hdf5_path: str
-    :param batch_size: size of the batch
-    :type batch_size: int
+    :param hdf5_path: path to the HDF5 file, if not provided, it will be generated based on the project ID
+    :type hdf5_path: str, optional
+    :param project_id: ID of the project.
+    :type project_id: int, optional
+    :param batch_size: size of the batch. If not provided, it will be calculated based on the atlas size
+        and the size of the image for the atlas.
+    :type batch_size: int, optional
     :return: generator of TileInfo objects
     :rtype: Generator[List[TileInfo], None, None]
     """
+    if not project_id and not hdf5_path:
+        raise ValueError("Either hdf5_path or project_id must be provided.")
+    elif not hdf5_path:
+        hdf5_path = get_hdf5_path(project_id)
+        sly.logger.debug(f"Using HDF5 file: {hdf5_path}")
+
+    if not batch_size:
+        # TODO: Calculate batch size
+        batch_size = atlas.tiles_in_atlas(g.ATLAS_SIZE, g.IMAGE_SIZE_FOR_ATLAS)
 
     # Open the HDF5 file
     with h5py.File(hdf5_path, "r") as f:

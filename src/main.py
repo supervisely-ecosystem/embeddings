@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from typing import List
+from typing import Dict, List, Tuple
 
 import aiohttp
 import cv2
@@ -14,6 +14,7 @@ from supervisely._utils import resize_image_url
 import src.atlas as atlas
 import src.cas as cas
 import src.globals as g
+import src.pointclouds as pointclouds
 import src.qdrant as qdrant
 import src.thumbnails as thumbnails
 from src.utils import ImageInfoLite, rgb_to_rgba, timer
@@ -34,54 +35,22 @@ async def create_atlas(request: Request):
     project_id = context.get("project_id")
     sly.logger.info(f"Creating atlas for project {project_id}...")
 
-    # Step 2: Get number of tiles in the atlas.
-    num_tiles = atlas.tiles_in_atlas(g.ATLAS_SIZE, 128)
-    sly.logger.debug(f"Full atlas should be containing {num_tiles} tiles.")
-
-    # Step 2.1: Prepare empty vector and atlas maps.
-    atlas_map = []
-    vector_map = []
-
-    # Step 3: Get tiles from the HDF5 file and save them into separate atlas images.
-    for idx, tiles in enumerate(
-        thumbnails.get_tiles_from_hdf5(thumbnails.get_hdf5_path(project_id), num_tiles)
-    ):
-        sly.logger.debug(
-            f"Processing {idx + 1} batch of tiles. Received {len(tiles)} tiles."
-        )
-
-        # Step 4: Get atlas image and map. Image is a numpy array, map is a list of dictionaries.
-        page_image, page_map = await atlas.save_atlas(g.ATLAS_SIZE, 128, tiles)
-
-        # Step 5: Add page elements to the vector and atlas maps, which will be saved to the files
-        # without splitting into pages.
-        vector_map.extend(await atlas.get_vector_map(idx, project_id, page_map))
-        atlas_map.extend(page_map)
-
-        if sly.is_development():
-            # Checking how much memory the vector map takes.
-            vector_map_size = asizeof.asizeof(vector_map) / 1024 / 1024
-            sly.logger.debug(f"Vector map size: {vector_map_size:.2f} MB")
-        project_atlas_dir = os.path.join(g.ATLAS_DIR, str(project_id))
-        sly.fs.mkdir(project_atlas_dir)
-        # Step 6.1: Convert RGBA to BGRA for compatibility with OpenCV.
-        page_image = cv2.cvtColor(page_image, cv2.COLOR_RGBA2BGRA)
-        # Step 6.2: Save atlas image to the file.
-        cv2.imwrite(
-            os.path.join(project_atlas_dir, f"{project_id}_{idx}.png"), page_image
-        )
-
-    # Step 7: Save atlas map to the JSON file.
+    # Step 2: Prepare the project directory.
     project_atlas_dir = os.path.join(g.ATLAS_DIR, str(project_id))
-    sly.fs.mkdir(project_atlas_dir)
+    sly.fs.mkdir(project_atlas_dir, remove_content_if_exists=True)
+
+    # Step 3: Save atlas pages and prepare vector and atlas maps.
+    atlas_map, vector_map = await process_atlas(project_id, project_atlas_dir)
+
+    # Step 4: Save atlas map to the JSON file.
     json.dump(
         atlas_map,
         open(os.path.join(project_atlas_dir, f"{project_id}.json"), "w"),
         indent=4,
     )
 
-    # Step 8: Create and save the vector map to the PCD file.
-    await atlas.create_pointcloud(project_id, vector_map)
+    # Step 5: Create and save the vector map to the PCD file.
+    await pointclouds.create_pointcloud(project_id, vector_map)
 
     sly.logger.info(f"Atlas for project {project_id} has been created.")
 
@@ -125,6 +94,42 @@ async def create_embeddings(request: Request):
 
 
 @timer
+async def process_atlas(
+    project_id: int, project_atlas_dir: str
+) -> Tuple[List[Dict], List[Dict]]:
+    atlas_map = []
+    vector_map = []
+
+    for idx, tiles in enumerate(thumbnails.get_tiles_from_hdf5(project_id=project_id)):
+        sly.logger.debug(
+            f"Processing {idx + 1} batch of tiles. Received {len(tiles)} tiles."
+        )
+
+        # Get atlas image and map. Image is a numpy array, map is a list of dictionaries.
+        page_image, page_map = await atlas.save_atlas(
+            g.ATLAS_SIZE, g.IMAGE_SIZE_FOR_ATLAS, tiles
+        )
+
+        # Add page elements to the vector and atlas maps, which will be saved to the files
+        # without splitting into pages.
+        vector_map.extend(await pointclouds.get_vector_map(idx, project_id, page_map))
+        atlas_map.extend(page_map)
+
+        if sly.is_development():
+            # Checking how much memory the vector map takes.
+            vector_map_size = asizeof.asizeof(vector_map) / 1024 / 1024
+            sly.logger.debug(f"Vector map size: {vector_map_size:.2f} MB")
+        # Convert RGBA to BGRA for compatibility with OpenCV.
+        page_image = cv2.cvtColor(page_image, cv2.COLOR_RGBA2BGRA)
+        # Save atlas image to the file.
+        cv2.imwrite(
+            os.path.join(project_atlas_dir, f"{project_id}_{idx}.png"), page_image
+        )
+
+    return atlas_map, vector_map
+
+
+@timer
 async def process_images(
     api: sly.Api, project_id: int, dataset_id: int = None, image_ids: List[int] = None
 ):
@@ -137,33 +142,33 @@ async def process_images(
         image_ids=image_ids,
     )
 
-    # Step 4.1: Get diff of image infos, check if they are already
+    # Get diff of image infos, check if they are already
     # in the Qdrant collection and have the same updated_at field.
     diff_image_infos = await qdrant.get_diff(project_id, image_infos)
 
-    # Step 5: Batch image urls.
+    # Batch image urls.
     for image_batch in sly.batched(diff_image_infos):
         # url_batch = [image_info.url for image_info in image_batch]
         # ids_batch = [image_info.id for image_info in image_batch]
 
-        # Step 6: Download images as numpy arrays using URLs resized
+        # Download images as numpy arrays using URLs resized
         # for for specified HDF5 sizes (for thumbnails in the atlas).
         nps_batch = await download_items(
             [image_info.hdf5_url for image_info in image_batch]
         )
 
-        # Step 6.1: Convert tiles into square images with alpha channel.
+        # Convert tiles into square images with alpha channel.
         nps_batch = rgb_to_rgba(nps_batch, g.IMAGE_SIZE_FOR_ATLAS)
 
-        # Step 7: Save images to hdf5.
+        # Save images to hdf5.
         thumbnails.save_to_hdf5(nps_batch, image_batch, project_id)
 
-        # Step 8: Get vectors from images.
+        # Get vectors from images.
         vectors_batch = await cas.get_vectors(
             [image_info.cas_url for image_info in image_batch]
         )
 
-        # Step 9: Upsert vectors to Qdrant.
+        # Upsert vectors to Qdrant.
         await qdrant.upsert(
             project_id,
             vectors_batch,

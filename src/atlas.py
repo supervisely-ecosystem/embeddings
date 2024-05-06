@@ -45,6 +45,8 @@ async def save_atlas(
         # Resize the thumbnail if it's not the same size as the tile_size.
         if tile_info.thumbnail.shape[0] != tile_size:
             thumbnail = resize_np(tile_info.thumbnail, tile_size)
+        else:
+            thumbnail = tile_info.thumbnail
 
         row = idx // num_tiles
         col = idx % num_tiles

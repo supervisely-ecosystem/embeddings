@@ -261,6 +261,30 @@ async def diverse_kmeans(
 
 
 @timer
+async def get_single_point(
+    collection_name: str,
+    vector: np.ndarray,
+    limit: int,
+    option: Literal["farthest", "closest", "random"] = "farthest",
+) -> Tuple[ImageInfoLite, np.ndarray]:
+    raise NotImplementedError("This function is not working properly.")
+
+    # TODO: Refactor and move search to a separate function with retries.
+    points = await client.search(
+        collection_name, vector, limit=limit, with_payload=True, with_vectors=True
+    )
+
+    if option == "farthest":
+        point = points[-1]
+    elif option == "closest":
+        point = points[0]
+    elif option == "random":
+        point = choice(points)
+
+    return ImageInfoLite(point.id, **point.payload), point.vector
+
+
+@timer
 async def diverse_fps(
     collection_name: str,
     num_images: int,
@@ -292,7 +316,6 @@ async def diverse_fps(
 
     diverse_images = []
     while len(diverse_images) < num_images:
-        # ! Implement function to get farthest point from the query vector.
         image_info, vector = await get_single_point(
             collection_name,
             query_vector,

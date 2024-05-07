@@ -267,7 +267,9 @@ async def get_single_point(
     limit: int,
     option: Literal["farthest", "closest", "random"] = "farthest",
 ) -> Tuple[ImageInfoLite, np.ndarray]:
-    raise NotImplementedError("This function is not working properly.")
+    raise NotImplementedError(
+        "This function is too slow, need to find an option to get farthest point from Qdrant."
+    )
 
     # TODO: Refactor and move search to a separate function with retries.
     points = await client.search(

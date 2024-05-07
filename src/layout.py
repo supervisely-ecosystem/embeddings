@@ -8,11 +8,14 @@ from supervisely.app.widgets import (
     Field,
     Flexbox,
     GridGallery,
+    Image,
     Input,
     InputNumber,
     Select,
+    Table,
 )
 
+from src.globals import api
 from src.utils import ImageInfoLite
 
 PROJECT_ID = 298119
@@ -35,8 +38,35 @@ diverse_fps_button.disable()
 buttons_flexbox = Flexbox([search_button, diverse_kmeans_button, diverse_fps_button])
 grid_gallery = GridGallery(columns_number=5)
 
-layout = Card(
-    "QDrant search",
+table = Table()
+
+columns = [
+    "dataset_id",
+    "image_id",
+    "image_name",
+    "select",
+]
+
+rows = []
+for dataset in api.dataset.get_list(PROJECT_ID):
+    for image in api.image.get_list(dataset.id):
+        rows.append(
+            [
+                dataset.id,
+                image.id,
+                image.name,
+                Table.create_button("select"),
+            ]
+        )
+
+table_data = {"columns": columns, "data": rows}
+table.read_json(table_data)
+
+image = Image()
+
+
+card1 = Card(
+    "QDrant search by prompt",
     "Enter a text query to search for similar images.",
     content=Container(
         [
@@ -48,6 +78,54 @@ layout = Card(
         ]
     ),
 )
+
+card2 = Card(
+    "QDrant search by image",
+    "Select an image to search for similar images.",
+    content=Container([table, image], direction="horizontal"),
+)
+
+layout = Container([card1, card2])
+
+
+@table.click
+def handle_table_button(datapoint: Table.ClickedDataPoint):
+    """Handles the click on the button in the table. Gets the image id from the
+    table and calls the API to get the image info. Downloads the image to the static directory,
+    reads the annotation info and shows the image in the preview widget.
+
+    Args:
+        datapoint (sly.app.widgets.Table.ClickedDataPoint): clicked datapoint in the table.
+    """
+    if datapoint.button_name != "select":
+        return
+
+    image_id = datapoint.row["image_id"]
+    image_info = api.image.get_info_by_id(image_id)
+
+    query = image_info.full_storage_url
+
+    image.set(query)
+
+    limit = limit_input.get_value()
+
+    request_json = {
+        "context": {
+            "project_id": PROJECT_ID,
+            "query": query,
+            "limit": limit,
+        }
+    }
+
+    from src.main import search
+
+    image_infos: List[ImageInfoLite] = run_sync(search(request_json))
+    assert len(image_infos) == len(set(image_infos)), "Duplicate images found."
+
+    grid_gallery.clean_up()
+
+    for image_info in image_infos:
+        grid_gallery.append(image_info.full_url)
 
 
 @search_button.click

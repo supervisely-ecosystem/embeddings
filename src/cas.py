@@ -7,7 +7,6 @@ from clip_client import Client
 import src.globals as g
 from src.utils import timer, with_retries
 
-# TODO: Return client on demand.
 client = Client(f"grpc://{g.cas_host}")
 
 try:

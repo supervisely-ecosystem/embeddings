@@ -13,7 +13,6 @@ from sklearn.cluster import KMeans
 import src.globals as g
 from src.utils import ImageInfoLite, timer, with_retries
 
-# TODO: Return client on demand.
 client = AsyncQdrantClient(g.qdrant_host)
 
 try:

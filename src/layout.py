@@ -10,16 +10,24 @@ from supervisely.app.widgets import (
     GridGallery,
     Input,
     InputNumber,
+    Select,
 )
 
 from src.utils import ImageInfoLite
 
 PROJECT_ID = 298119
+options = ["centroids", "random"]
 
 text_input = Input("aeroplane", minlength=1, placeholder="Enter text query")
 text_input_field = Field(text_input, title="Query", description="Enter a text query.")
 limit_input = InputNumber(10, min=1, max=100, step=1)
 limit_input_field = Field(limit_input, title="Limit", description="Enter a limit.")
+kmeans_option_select = Select([Select.Item(option) for option in options])
+kmeans_option_field = Field(
+    kmeans_option_select,
+    title="KMeans Option",
+    description="Select an option for KMeans.",
+)
 search_button = Button("Search")
 diverse_kmeans_button = Button("Diverse KMeans")
 buttons_flexbox = Flexbox([search_button, diverse_kmeans_button])
@@ -29,7 +37,13 @@ layout = Card(
     "QDrant search",
     "Enter a text query to search for similar images.",
     content=Container(
-        [text_input_field, limit_input_field, buttons_flexbox, grid_gallery]
+        [
+            text_input_field,
+            limit_input_field,
+            kmeans_option_field,
+            buttons_flexbox,
+            grid_gallery,
+        ]
     ),
 )
 
@@ -63,12 +77,14 @@ def on_diverse_kmeans_button_click():
     grid_gallery.clean_up()
 
     limit = limit_input.get_value()
+    option = kmeans_option_select.get_value()
 
     request_json = {
         "context": {
             "project_id": PROJECT_ID,
             "method": "kmeans",
             "limit": limit,
+            "option": option,
         }
     }
 

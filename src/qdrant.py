@@ -1,6 +1,6 @@
 from math import sqrt
 from random import choice
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Literal, Tuple
 
 import numpy as np
 import supervisely as sly
@@ -174,8 +174,27 @@ async def get_items(
 
 @timer
 async def diverse_kmeans(
-    collection_name: str, num_images: int, num_clusters: int = 3
-) -> List[np.ndarray]:
+    collection_name: str,
+    num_images: int,
+    num_clusters: int = None,
+    option: Literal["random", "centroids"] = "random",
+) -> List[ImageInfoLite]:
+    """Generate a diverse population of images using KMeans clustering.
+    Two options are available: "random" and "centroids".
+    The "random" option chooses a random image from each cluster.
+    The "centroids" option chooses the image closest to the centroid of each cluster.
+
+    :param collection_name: The name of the collection to get items from.
+    :type collection_name: str
+    :param num_images: The number of diverse images to generate.
+    :type num_images: int
+    :param num_clusters: The number of clusters to use in KMeans clustering.
+    :type num_clusters: int
+    :param option: The option to use for choosing images from clusters, defaults to "random".
+    :type option: Literal["random", "centroids"], optional
+    :return: A list of diverse images as ImageInfoLite objects.
+    :rtype: List[ImageInfoLite]
+    """
     image_infos, vectors = await get_items(collection_name)
     if not num_clusters:
         num_clusters = int(sqrt(len(image_infos) / 2))
@@ -195,7 +214,21 @@ async def diverse_kmeans(
             if not cluster_image_infos:
                 continue
 
-            image_info = choice(cluster_image_infos)
+            if option == "random":
+                # Randomly choose an image from the cluster.
+                image_info = choice(cluster_image_infos)
+            elif option == "centroids":
+                # Choose the image closest to the centroid of the cluster.
+                cluster_vectors = [
+                    vector
+                    for vector, label in zip(vectors, labels)
+                    if label == cluster_id
+                ]
+                centroid = np.mean(cluster_vectors, axis=0)
+                distances = [
+                    np.linalg.norm(vector - centroid) for vector in cluster_vectors
+                ]
+                image_info = cluster_image_infos[distances.index(min(distances))]
             diverse_images.append(image_info)
             image_infos.remove(image_info)
             if len(diverse_images) == num_images:

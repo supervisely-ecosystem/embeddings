@@ -123,11 +123,12 @@ async def diverse(request: Request):
     project_id = context.get("project_id")
     method = context.get("method")
     limit = context.get("limit", 10)
+    option = context.get("option")
     sly.logger.debug(
         f"Generating diverse population for project {project_id} with method {method}"
     )
 
-    image_infos = await qdrant.diverse_kmeans(project_id, limit)
+    image_infos = await qdrant.diverse_kmeans(project_id, limit, option=option)
     sly.logger.debug(f"Generated {len(image_infos)} diverse images.")
 
     return image_infos

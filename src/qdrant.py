@@ -1,6 +1,6 @@
 from math import sqrt
 from random import choice
-from typing import Any, Dict, List, Literal, Tuple
+from typing import Any, Dict, List, Literal, Tuple, Union
 
 import numpy as np
 import supervisely as sly
@@ -144,15 +144,23 @@ def get_payloads(image_infos: List[ImageInfoLite]) -> List[Dict[str, Any]]:
 @with_retries()
 @timer
 async def search(
-    collection_name: str, query_vector: np.ndarray, limit: int
-) -> List[ImageInfoLite]:
+    collection_name: str,
+    query_vector: np.ndarray,
+    limit: int,
+    return_vectors: bool = False,
+) -> Union[List[ImageInfoLite], Tuple[List[ImageInfoLite], List[np.ndarray]]]:
     points = await client.search(
         collection_name,
         query_vector,
         limit=limit,
         with_payload=True,
+        with_vectors=return_vectors,
     )
-    return [ImageInfoLite(point.id, **point.payload) for point in points]
+    image_infos = [ImageInfoLite(point.id, **point.payload) for point in points]
+    if return_vectors:
+        vectors = [point.vector for point in points]
+        return image_infos, vectors
+    return image_infos
 
 
 @with_retries()
@@ -270,20 +278,9 @@ async def get_single_point(
     raise NotImplementedError(
         "This function is too slow, need to find an option to get farthest point from Qdrant."
     )
-
-    # TODO: Refactor and move search to a separate function with retries.
-    points = await client.search(
-        collection_name, vector, limit=limit, with_payload=True, with_vectors=True
+    image_infos, vectors = await search(
+        collection_name, vector, limit, return_vectors=True
     )
-
-    if option == "farthest":
-        point = points[-1]
-    elif option == "closest":
-        point = points[0]
-    elif option == "random":
-        point = choice(points)
-
-    return ImageInfoLite(point.id, **point.payload), point.vector
 
 
 @timer

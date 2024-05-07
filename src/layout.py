@@ -30,7 +30,9 @@ kmeans_option_field = Field(
 )
 search_button = Button("Search")
 diverse_kmeans_button = Button("Diverse KMeans")
-buttons_flexbox = Flexbox([search_button, diverse_kmeans_button])
+diverse_fps_button = Button("Diverse FPS")
+diverse_fps_button.disable()
+buttons_flexbox = Flexbox([search_button, diverse_kmeans_button, diverse_fps_button])
 grid_gallery = GridGallery(columns_number=5)
 
 layout = Card(
@@ -85,6 +87,29 @@ def on_diverse_kmeans_button_click():
             "method": "kmeans",
             "limit": limit,
             "option": option,
+        }
+    }
+
+    from src.main import diverse
+
+    image_infos: List[ImageInfoLite] = run_sync(diverse(request_json))
+    assert len(image_infos) == len(set(image_infos)), "Duplicate images found."
+
+    for image_info in image_infos:
+        grid_gallery.append(image_info.full_url)
+
+
+@diverse_fps_button.click
+def on_diverse_fps_button_click():
+    grid_gallery.clean_up()
+
+    limit = limit_input.get_value()
+
+    request_json = {
+        "context": {
+            "project_id": PROJECT_ID,
+            "method": "fps",
+            "limit": limit,
         }
     }
 

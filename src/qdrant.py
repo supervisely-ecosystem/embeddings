@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Literal, Tuple
 
 import numpy as np
 import supervisely as sly
+from pympler import asizeof
 from qdrant_client import AsyncQdrantClient, QdrantClient
 from qdrant_client.http.exceptions import UnexpectedResponse
 from qdrant_client.models import Batch, CollectionInfo, Distance, VectorParams
@@ -160,7 +161,8 @@ async def get_items(
     collection_name: str, limit: int = None
 ) -> Tuple[List[ImageInfoLite], List[np.ndarray]]:
     if not limit:
-        limit = pow(2, 31)
+        collection = await client.get_collection(collection_name)
+        limit = collection.points_count
     points, _ = await client.scroll(
         collection_name, limit=limit, with_payload=True, with_vectors=True
     )
@@ -173,11 +175,24 @@ async def get_items(
 
 
 @timer
+async def diverse(
+    collection_name: str, num_images: int, method: str, **kwargs
+) -> List[ImageInfoLite]:
+    if method == "kmeans":
+        num_clusters = kwargs.get("num_clusters")
+        option = kwargs.get("option")
+        return await diverse_kmeans(collection_name, num_images, num_clusters, option)
+    elif method == "fps":
+        initial_vector = kwargs.get("initial_vector")
+        return await diverse_fps(collection_name, num_images, initial_vector)
+
+
+@timer
 async def diverse_kmeans(
     collection_name: str,
     num_images: int,
     num_clusters: int = None,
-    option: Literal["random", "centroids"] = "random",
+    option: Literal["random", "centroids"] = None,
 ) -> List[ImageInfoLite]:
     """Generate a diverse population of images using KMeans clustering.
     Two options are available: "random" and "centroids".
@@ -190,18 +205,26 @@ async def diverse_kmeans(
     :type num_images: int
     :param num_clusters: The number of clusters to use in KMeans clustering.
     :type num_clusters: int
-    :param option: The option to use for choosing images from clusters, defaults to "random".
+    :param option: The option to use for choosing images from clusters, defaults to None.
     :type option: Literal["random", "centroids"], optional
     :return: A list of diverse images as ImageInfoLite objects.
     :rtype: List[ImageInfoLite]
     """
     image_infos, vectors = await get_items(collection_name)
+    if sly.is_development():
+        vectors_size = asizeof.asizeof(vectors) / 1024 / 1024
+        sly.logger.debug(f"Vectors size: {vectors_size:.2f} MB.")
     if not num_clusters:
         num_clusters = int(sqrt(len(image_infos) / 2))
         sly.logger.debug(f"Number of clusters is set to {num_clusters}.")
+    if not option:
+        option = "random"
+        sly.logger.debug(f"Option is set to {option}.")
     kmeans = KMeans(n_clusters=num_clusters).fit(vectors)
     labels = kmeans.labels_
-    sly.logger.debug(f"KMeans clustering with {num_clusters} clusters is done.")
+    sly.logger.debug(
+        f"KMeans clustering with {num_clusters} and {option} option is done."
+    )
 
     diverse_images = []
     while len(diverse_images) < num_images:
@@ -233,5 +256,49 @@ async def diverse_kmeans(
             image_infos.remove(image_info)
             if len(diverse_images) == num_images:
                 break
+
+    return diverse_images
+
+
+@timer
+async def diverse_fps(
+    collection_name: str,
+    num_images: int,
+    initial_vector: np.ndarray = None,
+) -> List[ImageInfoLite]:
+    """Generate a diverse population of images using Farthest Point Sampling (FPS).
+
+    :param collection_name: The name of the collection to get items from.
+    :type collection_name: str
+    :param num_images: The number of diverse images to generate.
+    :type num_images: int
+    :param initial_vector: The initial vector to start the sampling from, defaults to None.
+    :type initial_vector: np.ndarray, optional
+    :return: A list of diverse images as ImageInfoLite objects.
+    :rtype: List[ImageInfoLite]
+    """
+    collection = await client.get_collection(collection_name)
+
+    _, vectors = await get_items(collection_name, 1)
+    vector_len = len(vectors[0])
+    if not initial_vector:
+        query_vector = np.random.rand(1, vector_len).flatten()
+    else:
+        if not len(initial_vector) == vector_len:
+            raise ValueError(
+                f"The length of the initial vector should be {vector_len}."
+            )
+        query_vector = initial_vector
+
+    diverse_images = []
+    while len(diverse_images) < num_images:
+        # ! Implement function to get farthest point from the query vector.
+        image_info, vector = await get_single_point(
+            collection_name,
+            query_vector,
+            limit=collection.points_count,
+        )
+        diverse_images.append(image_info)
+        query_vector = vector
 
     return diverse_images

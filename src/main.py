@@ -120,15 +120,14 @@ async def diverse(request: Request):
     except Exception:
         # For development purposes.
         context = request.get("context")
-    project_id = context.get("project_id")
-    method = context.get("method")
-    limit = context.get("limit", 10)
-    option = context.get("option")
+    project_id = context.pop("project_id")
+    method = context.pop("method")
+    limit = context.pop("limit")
     sly.logger.debug(
         f"Generating diverse population for project {project_id} with method {method}"
     )
 
-    image_infos = await qdrant.diverse_kmeans(project_id, limit, option=option)
+    image_infos = await qdrant.diverse(project_id, limit, method=method, **context)
     sly.logger.debug(f"Generated {len(image_infos)} diverse images.")
 
     return image_infos

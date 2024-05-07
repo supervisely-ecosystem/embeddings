@@ -24,7 +24,12 @@ except Exception as e:
 
 
 @with_retries()
-async def delete_collection(collection_name: str):
+async def delete_collection(collection_name: str) -> None:
+    """Delete a collection with the specified name.
+
+    :param collection_name: The name of the collection to delete.
+    :type collection_name: str
+    """
     sly.logger.debug(f"Deleting collection {collection_name}...")
     try:
         await client.delete_collection(collection_name)
@@ -38,6 +43,17 @@ async def delete_collection(collection_name: str):
 async def get_or_create_collection(
     collection_name: str, size: int = 512, distance: Distance = Distance.COSINE
 ) -> CollectionInfo:
+    """Get or create a collection with the specified name.
+
+    :param collection_name: The name of the collection to get or create.
+    :type collection_name: str
+    :param size: The size of the vectors in the collection, defaults to 512.
+    :type size: int, optional
+    :param distance: The distance metric to use for the collection, defaults to Distance.COSINE.
+    :type distance: Distance, optional
+    :return: The CollectionInfo object.
+    :rtype: CollectionInfo
+    """
     try:
         collection = await client.get_collection(collection_name)
         sly.logger.debug(f"Collection {collection_name} already exists.")
@@ -54,6 +70,15 @@ async def get_or_create_collection(
 @with_retries()
 @timer
 async def get_vectors(collection_name: str, image_ids: List[int]) -> List[np.ndarray]:
+    """Get vectors from the collection based on the specified image IDs.
+
+    :param collection_name: The name of the collection to get vectors from.
+    :type collection_name: str
+    :param image_ids: A list of image IDs to get vectors for.
+    :type image_ids: List[int]
+    :return: A list of vectors.
+    :rtype: List[np.ndarray]
+    """
     points = await client.retrieve(
         collection_name, image_ids, with_payload=False, with_vectors=True
     )
@@ -66,7 +91,16 @@ async def upsert(
     collection_name: str,
     vectors: List[np.ndarray],
     image_infos: List[ImageInfoLite],
-):
+) -> None:
+    """Upsert vectors and payloads to the collection.
+
+    :param collection_name: The name of the collection to upsert to.
+    :type collection_name: str
+    :param vectors: A list of vectors to upsert.
+    :type vectors: List[np.ndarray]
+    :param image_infos: A list of ImageInfoLite objects.
+    :type image_infos: List[ImageInfoLite]
+    """
     await client.upsert(
         collection_name,
         Batch(
@@ -90,6 +124,16 @@ async def upsert(
 async def get_diff(
     collection_name: str, image_infos: List[ImageInfoLite]
 ) -> List[ImageInfoLite]:
+    """Get the difference between ImageInfoLite objects and points from the collection.
+    Returns ImageInfoLite objects that need to be updated.
+
+    :param collection_name: The name of the collection to get items from.
+    :type collection_name: str
+    :param image_infos: A list of ImageInfoLite objects.
+    :type image_infos: List[ImageInfoLite]
+    :return: A list of ImageInfoLite objects that need to be updated.
+    :rtype: List[ImageInfoLite]
+    """
     # Get specified ids from collection, compare updated_at and return ids that need to be updated.
     points = await client.retrieve(
         collection_name,
@@ -118,6 +162,16 @@ async def get_diff(
 def _diff(
     image_infos: List[ImageInfoLite], points: List[Dict[str, Any]]
 ) -> List[ImageInfoLite]:
+    """Compare ImageInfoLite objects with points from the collection and return the difference.
+    Uses updated_at field to compare points.
+
+    :param image_infos: A list of ImageInfoLite objects.
+    :type image_infos: List[ImageInfoLite]
+    :param points: A list of dictionaries with points from the collection.
+    :type points: List[Dict[str, Any]]
+    :return: A list of ImageInfoLite objects that need to be updated.
+    :rtype: List[ImageInfoLite]
+    """
     # If the point with the same id doesn't exist in the collection, it will be added to the diff.
     # If the point with the same id exsts - check if updated_at is exactly the same, or add to the diff.
     # Image infos and points have different length, so we need to iterate over image infos.
@@ -134,8 +188,17 @@ def _diff(
 
 @timer
 def get_payloads(image_infos: List[ImageInfoLite]) -> List[Dict[str, Any]]:
+    """Get payloads from ImageInfoLite objects.
+    Converts named tuples to dictionaries and removes the id field.
+
+    :param image_infos: A list of ImageInfoLite objects.
+    :type image_infos: List[ImageInfoLite]
+    :return: A list of payloads.
+    :rtype: List[Dict[str, Any]]
+    """
+    ignore_fields = ["id"]
     payloads = [
-        {k: v for k, v in image_info._asdict().items() if k != "id"}
+        {k: v for k, v in image_info._asdict().items() if k not in ignore_fields}
         for image_info in image_infos
     ]
     return payloads
@@ -149,6 +212,22 @@ async def search(
     limit: int,
     return_vectors: bool = False,
 ) -> Union[List[ImageInfoLite], Tuple[List[ImageInfoLite], List[np.ndarray]]]:
+    """Search for similar items in the collection based on the query vector.
+    If return_vectors is True, returns vectors along with ImageInfoLite objects.
+    NOTE: Do not set return_vectors to True unless necessary, since it will slow down the process
+    and increase the memory usage.
+
+    :param collection_name: The name of the collection to search in.
+    :type collection_name: str
+    :param query_vector: The vector to use for searching.
+    :type query_vector: np.ndarray
+    :param limit: The number of items to return.
+    :type limit: int
+    :param return_vectors: Whether to return vectors along with ImageInfoLite objects, defaults to False.
+    :type return_vectors: bool, optional
+    :return: A list of ImageInfoLite objects and vectors if return_vectors is True.
+    :rtype: Union[List[ImageInfoLite], Tuple[List[ImageInfoLite], List[np.ndarray]]]
+    """
     points = await client.search(
         collection_name,
         query_vector,
@@ -168,6 +247,15 @@ async def search(
 async def get_items(
     collection_name: str, limit: int = None
 ) -> Tuple[List[ImageInfoLite], List[np.ndarray]]:
+    """Returns specified number of items from the collection. If limit is not specified, returns all items.
+
+    :param collection_name: The name of the collection to get items from.
+    :type collection_name: str
+    :param limit: The number of items to return, defaults to None.
+    :type limit: int, optional
+    :return: A tuple of ImageInfoLite objects and vectors.
+    :rtype: Tuple[List[ImageInfoLite], List[np.ndarray]]
+    """
     if not limit:
         collection = await client.get_collection(collection_name)
         limit = collection.points_count
@@ -186,6 +274,17 @@ async def get_items(
 async def diverse(
     collection_name: str, num_images: int, method: str, **kwargs
 ) -> List[ImageInfoLite]:
+    """Generate a diverse population of images using the specified method.
+
+    :param collection_name: The name of the collection to get items from.
+    :type collection_name: str
+    :param num_images: The number of diverse images to generate.
+    :type num_images: int
+    :param method: The method to use for generating diverse images.
+    :type method: str
+    :return: A list of diverse images as ImageInfoLite objects.
+    :rtype: List[ImageInfoLite]
+    """
     if method == "kmeans":
         num_clusters = kwargs.get("num_clusters")
         option = kwargs.get("option")
@@ -275,6 +374,21 @@ async def get_single_point(
     limit: int,
     option: Literal["farthest", "closest", "random"] = "farthest",
 ) -> Tuple[ImageInfoLite, np.ndarray]:
+    """Get a single point from the collection based on the specified option.
+    Options available: "farthest", "closest", "random".
+    NOTE: This function is too slow, need to find an option to get farthest point from Qdrant.
+
+    :param collection_name: The name of the collection to get items from.
+    :type collection_name: str
+    :param vector: The vector to use for searching.
+    :type vector: np.ndarray
+    :param limit: The number of items to search.
+    :type limit: int
+    :param option: The option to use for choosing the point, defaults to "farthest".
+    :type option: Literal["farthest", "closest", "random"], optional
+    :return: The ImageInfoLite object and the vector of the chosen point.
+    :rtype: Tuple[ImageInfoLite, np.ndarray]
+    """
     raise NotImplementedError(
         "This function is too slow, need to find an option to get farthest point from Qdrant."
     )

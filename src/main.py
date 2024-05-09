@@ -2,7 +2,6 @@ import json
 import os
 from typing import Dict, List, Tuple
 
-import cv2
 import supervisely as sly
 from fastapi import Request
 from pympler import asizeof
@@ -41,7 +40,12 @@ async def create_atlas(request: Request):
     sly.fs.mkdir(project_atlas_dir, remove_content_if_exists=True)
 
     # Step 3: Save atlas pages and prepare vector and atlas maps.
-    atlas_map, vector_map = await process_atlas(project_id, project_atlas_dir)
+    atlas_map, tile_infos = await process_atlas(
+        project_id,
+        project_atlas_dir,
+        atlas_size=g.ATLAS_SIZE,
+        tile_size=g.IMAGE_SIZE_FOR_ATLAS,
+    )
 
     # Step 4: Save atlas map to the JSON file.
     json.dump(
@@ -51,7 +55,7 @@ async def create_atlas(request: Request):
     )
 
     # Step 5: Create and save the vector map to the PCD file.
-    await pointclouds.create_pointcloud(project_id, vector_map)
+    await pointclouds.create_pointcloud(project_id, tile_infos)
 
     sly.logger.info(f"Atlas for project {project_id} has been created.")
 
@@ -135,38 +139,48 @@ async def diverse(request: Request):
 
 @timer
 async def process_atlas(
-    project_id: int, project_atlas_dir: str
+    project_id: int, project_atlas_dir: str, atlas_size: int, tile_size: int
 ) -> Tuple[List[Dict], List[Dict]]:
-    atlas_map = []
-    vector_map = []
+    images = []
+    tile_infos = []
 
     for idx, tiles in enumerate(thumbnails.get_tiles_from_hdf5(project_id=project_id)):
-        sly.logger.debug(
-            f"Processing {idx + 1} batch of tiles. Received {len(tiles)} tiles."
-        )
+        file_name = f"{project_id}_{idx}.png"
+        image_ids = [tile.id for tile in tiles]
+        sly.logger.debug(f"Processing tile batch #{idx}, received {len(tiles)} tiles.")
 
         # Get atlas image and map. Image is a numpy array, map is a list of dictionaries.
-        page_image, page_map = save_atlas(
-            g.ATLAS_SIZE, g.IMAGE_SIZE_FOR_ATLAS, tiles, atlas_id=idx
-        )
+        page_image = save_atlas(atlas_size, tile_size, tiles, atlas_id=idx)
 
-        # Add page elements to the vector and atlas maps, which will be saved to the files
-        # without splitting into pages.
-        vector_map.extend(await pointclouds.get_vector_map(idx, project_id, page_map))
-        atlas_map.extend(page_map)
+        tile_infos.extend(await pointclouds.get_tile_infos(idx, project_id, image_ids))
+
+        images.append(
+            {
+                # TODO: Add Enum with keys to avoid using strings.
+                "id": idx,
+                "unitSize": tile_size,
+                "fileName": file_name,
+                "url": "",  # URL will be added when serving the file, fileName will be used.
+            }
+        )
 
         if sly.is_development():
             # Checking how much memory the vector map takes.
-            vector_map_size = asizeof.asizeof(vector_map) / 1024 / 1024
-            sly.logger.debug(f"Vector map size: {vector_map_size:.2f} MB")
-        # Convert RGBA to BGRA for compatibility with OpenCV.
-        page_image = cv2.cvtColor(page_image, cv2.COLOR_RGBA2BGRA)
+            tile_infos_size = asizeof.asizeof(tile_infos) / 1024 / 1024
+            sly.logger.debug(f"TileInfos size: {tile_infos_size:.2f} MB")
+
         # Save atlas image to the file.
-        cv2.imwrite(
-            os.path.join(project_atlas_dir, f"{project_id}_{idx}.png"), page_image
+        sly.image.write(
+            os.path.join(project_atlas_dir, file_name),
+            page_image,
+            remove_alpha_channel=False,
         )
 
-    return atlas_map, vector_map
+    atlas_map = {
+        "images": images,
+    }
+
+    return atlas_map, tile_infos
 
 
 @timer

@@ -68,20 +68,28 @@ async def get_or_create_collection(
 
 @with_retries()
 @timer
-async def get_vectors(collection_name: str, image_ids: List[int]) -> List[np.ndarray]:
+async def get_items_by_ids(
+    collection_name: str, image_ids: List[int], with_vectors: bool = False
+) -> Union[List[ImageInfoLite], Tuple[List[ImageInfoLite], List[np.ndarray]]]:
     """Get vectors from the collection based on the specified image IDs.
 
     :param collection_name: The name of the collection to get vectors from.
     :type collection_name: str
     :param image_ids: A list of image IDs to get vectors for.
     :type image_ids: List[int]
+    :param with_vectors: Whether to return vectors along with ImageInfoLite objects, defaults to False.
+    :type with_vectors: bool, optional
     :return: A list of vectors.
     :rtype: List[np.ndarray]
     """
     points = await client.retrieve(
-        collection_name, image_ids, with_payload=False, with_vectors=True
+        collection_name, image_ids, with_payload=True, with_vectors=with_vectors
     )
-    return [point.vector for point in points]
+    image_infos = [ImageInfoLite(point.id, **point.payload) for point in points]
+    if with_vectors:
+        vectors = [point.vector for point in points]
+        return image_infos, vectors
+    return image_infos
 
 
 @with_retries(retries=5, sleep_time=2)

@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Dict, List, Union
+from typing import List
 
 import numpy as np
 import supervisely as sly
@@ -52,31 +52,21 @@ def create_umap(vectors: List[np.ndarray], n_components: int = 3) -> np.ndarray:
 
 
 @timer
-async def get_vector_map(
-    atlas_id: int, project_id: int, atlas_map: List[Dict[str, Union[str, int]]]
+async def get_tile_infos(
+    atlas_id: int, project_id: int, image_ids: List[int]
 ) -> List[PointCloudTileInfo]:
-    vector_map = []
-    image_ids = []
-    for entry in atlas_map:
-        image_id = entry.pop("image_id")
-        vector_map.append(
-            {
-                "image_id": image_id,
-                "id": entry.get("id"),
-            }
-        )
-        image_ids.append(image_id)
-
-    vectors = await qdrant.get_vectors(project_id, image_ids)
+    image_infos, vectors = await qdrant.get_items_by_ids(
+        project_id, image_ids, with_vectors=True
+    )
 
     return [
         PointCloudTileInfo(
             atlasId=atlas_id,
-            atlasIndex=entry.get("id"),
-            imageId=entry.get("image_id"),
+            atlasIndex=idx,
+            imageId=image_info.id,
             vector=vector,
         )
-        for entry, vector in zip(vector_map, vectors)
+        for idx, (image_info, vector) in enumerate(zip(image_infos, vectors))
     ]
 
 
@@ -88,7 +78,6 @@ async def create_pointcloud(
         create_umap, [entry.vector for entry in vector_map]
     )
 
-    # Step 9: Create point cloud and save it to the PCD file.
     cloud = await asyncio.to_thread(get_pointcloud, umap_vectors, vector_map)
     project_atlas_dir = os.path.join(g.ATLAS_DIR, str(project_id))
     sly.fs.mkdir(project_atlas_dir)
@@ -104,3 +93,4 @@ async def create_pointcloud(
         )
         sly.logger.debug(f"Number of points in the cloud: {cloud.points}")
         sly.logger.debug(f"Fields in the PCD file: {cloud.fields}")
+        print(cloud.numpy())

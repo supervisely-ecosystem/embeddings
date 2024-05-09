@@ -1,5 +1,5 @@
 import math
-from typing import Dict, List, Tuple, Union
+from typing import List
 
 import cv2
 import numpy as np
@@ -24,7 +24,7 @@ def tiles_in_atlas(atlas_size: int, tile_size: int) -> int:
 @timer
 def save_atlas(
     atlas_size: int, tile_size: int, tile_infos: List[TileInfo], atlas_id: int
-) -> Tuple[np.ndarray, List[Dict[str, Union[str, int]]]]:
+) -> np.ndarray:
     # Receives a list of 4-channel RGBA numpy arrays and returns a single 4-channel RGBA numpy array.
     # Tiles of the atlas are filled row by row from the top left corner.
     # Result height of the atlas depends on the number of given image_nps (will be less than atlas_size if needed).
@@ -38,9 +38,8 @@ def save_atlas(
     # Create an empty atlas with rows number of rows
     atlas = np.zeros((rows * tile_size, atlas_size, 4), dtype=np.uint8)
     sly.logger.debug(f"Created an empty atlas with shape {atlas.shape}.")
-    atlas_map = []
 
-    # Iterate over the thumbnails and fill the atlas, adding metadata to the atlas_map.
+    # Iterate over the thumbnails and fill the atlas.
     for idx, tile_info in enumerate(tile_infos):
         # Resize the thumbnail if it's not the same size as the tile_size.
         if tile_info.thumbnail.shape[0] != tile_size:
@@ -55,17 +54,7 @@ def save_atlas(
             col * tile_size : (col + 1) * tile_size,
         ] = thumbnail
 
-        atlas_map.append(
-            {
-                "id": idx,
-                "atlas_id": atlas_id,
-                "unitSize": tile_info.unitSize,
-                "url": tile_info.url,
-                "image_id": tile_info.id,
-            }
-        )
-
-    return atlas, atlas_map
+    return atlas
 
 
 def resize_np(image_np: np.ndarray, size: int) -> np.ndarray:

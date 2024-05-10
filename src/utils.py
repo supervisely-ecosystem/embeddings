@@ -32,6 +32,17 @@ class TupleFields(StrEnum):
     VECTOR = "vector"
 
 
+class ContextFields(StrEnum):
+    """Fields of the context in request objects."""
+
+    PROJECT_ID = "project_id"
+    IMAGE_IDS = "image_ids"
+    FORCE = "force"
+    QUERY = "query"
+    LIMIT = "limit"
+    METHOD = "method"
+
+
 ImageInfoLite = namedtuple(
     "ImageInfoLite",
     [

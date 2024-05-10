@@ -14,6 +14,7 @@ from src.atlas import get_atlas
 from src.layout import layout
 from src.pointclouds import get_tile_infos, save_pointcloud
 from src.utils import (
+    ContextFields,
     ImageInfoLite,
     _get_api_from_request,
     download_items,
@@ -40,7 +41,7 @@ async def create_atlas(request: Request) -> None:
     """
     # Step 1: Unpack data from the request.
     context = request.state.context
-    project_id = context.get("project_id")
+    project_id = context.get(ContextFields.PROJECT_ID)
     sly.logger.info(f"Creating atlas for project {project_id}...")
 
     # Step 2: Prepare the project directory.
@@ -85,12 +86,12 @@ async def create_embeddings(request: Request) -> None:
     # Step 1: Unpack data from the request.
     api = _get_api_from_request(request)
     context = request.state.context
-    project_id = context.get("project_id")
+    project_id = context.get(ContextFields.PROJECT_ID)
     # If context contains list of image_ids it means that we're
     # updating embeddings for specific images, otherwise we're updating
     # the whole project.
-    image_ids = context.get("image_ids")
-    force = context.get("force")
+    image_ids = context.get(ContextFields.IMAGE_IDS)
+    force = context.get(ContextFields.FORCE)
 
     if force:
         # Step 1.1: If force is True, delete the collection and recreate it.
@@ -138,9 +139,9 @@ async def search(request: Request) -> List[ImageInfoLite]:
         # For development purposes.
         context = request.get("context")
     # ! END OF DEBUG SECTION.
-    project_id = context.get("project_id")
-    query = context.get("query")
-    limit = context.get("limit", 10)
+    project_id = context.get(ContextFields.PROJECT_ID)
+    query = context.get(ContextFields.QUERY)
+    limit = context.get(ContextFields.LIMIT, 10)
     sly.logger.debug(f"Searching for {query} in project {project_id}...")
 
     # ? Add support for image IDs in the query.
@@ -188,9 +189,9 @@ async def diverse(request: Request) -> List[ImageInfoLite]:
         # For development purposes.
         context = request.get("context")
     # ! END OF DEBUG SECTION.
-    project_id = context.pop("project_id")
-    method = context.pop("method")
-    limit = context.pop("limit")
+    project_id = context.pop(ContextFields.PROJECT_ID)
+    method = context.pop(ContextFields.METHOD)
+    limit = context.pop(ContextFields.LIMIT)
     sly.logger.debug(
         f"Generating diverse population for project {project_id} with method {method}"
     )

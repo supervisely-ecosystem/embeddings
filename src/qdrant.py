@@ -11,7 +11,7 @@ from qdrant_client.models import Batch, CollectionInfo, Distance, VectorParams
 from sklearn.cluster import KMeans
 
 import src.globals as g
-from src.utils import ImageInfoLite, timer, with_retries
+from src.utils import ImageInfoLite, QdrantFields, TupleFields, timer, with_retries
 
 client = AsyncQdrantClient(g.qdrant_host)
 
@@ -187,7 +187,10 @@ def _diff(
 
     for image_info in image_infos:
         point = points_dict.get(image_info.id)
-        if point is None or point.payload.get("updated_at") != image_info.updated_at:
+        if (
+            point is None
+            or point.payload.get(TupleFields.UPDATED_AT) != image_info.updated_at
+        ):
             diff.append(image_info)
 
     return diff
@@ -203,7 +206,7 @@ def get_payloads(image_infos: List[ImageInfoLite]) -> List[Dict[str, Any]]:
     :return: A list of payloads.
     :rtype: List[Dict[str, Any]]
     """
-    ignore_fields = ["id"]
+    ignore_fields = [TupleFields.ID]
     payloads = [
         {k: v for k, v in image_info._asdict().items() if k not in ignore_fields}
         for image_info in image_infos
@@ -289,16 +292,19 @@ async def diverse(
     :type num_images: int
     :param method: The method to use for generating diverse images.
     :type method: str
+    :raises ValueError: If the method is not supported.
     :return: A list of diverse images as ImageInfoLite objects.
     :rtype: List[ImageInfoLite]
     """
-    if method == "kmeans":
-        num_clusters = kwargs.get("num_clusters")
-        option = kwargs.get("option")
+    if method == QdrantFields.KMEANS:
+        num_clusters = kwargs.get(QdrantFields.NUM_CLUSTERS)
+        option = kwargs.get(QdrantFields.OPTION)
         return await diverse_kmeans(collection_name, num_images, num_clusters, option)
-    elif method == "fps":
-        initial_vector = kwargs.get("initial_vector")
+    elif method == QdrantFields.FPS:
+        initial_vector = kwargs.get(QdrantFields.INITIAL_VECTOR)
         return await diverse_fps(collection_name, num_images, initial_vector)
+    else:
+        raise ValueError(f"Method {method} is not supported.")
 
 
 @timer
@@ -332,7 +338,7 @@ async def diverse_kmeans(
         num_clusters = int(sqrt(len(image_infos) / 2))
         sly.logger.debug(f"Number of clusters is set to {num_clusters}.")
     if not option:
-        option = "random"
+        option = QdrantFields.RANDOM
         sly.logger.debug(f"Option is set to {option}.")
     kmeans = KMeans(n_clusters=num_clusters).fit(vectors)
     labels = kmeans.labels_
@@ -351,10 +357,10 @@ async def diverse_kmeans(
             if not cluster_image_infos:
                 continue
 
-            if option == "random":
+            if option == QdrantFields.RANDOM:
                 # Randomly choose an image from the cluster.
                 image_info = choice(cluster_image_infos)
-            elif option == "centroids":
+            elif option == QdrantFields.CENTROIDS:
                 # Choose the image closest to the centroid of the cluster.
                 cluster_vectors = [
                     vector

@@ -8,7 +8,7 @@ from pypcd4 import Encoding, PointCloud
 
 import src.globals as g
 import src.qdrant as qdrant
-from src.utils import PointCloudTileInfo, timer, to_thread
+from src.utils import PointCloudTileInfo, TupleFields, timer, to_thread
 
 
 @to_thread
@@ -26,7 +26,9 @@ def get_pointcloud(
     :return: The point cloud object.
     :rtype: PointCloud
     """
-    custom_fields = [field for field in PointCloudTileInfo._fields if field != "vector"]
+    custom_fields = [
+        field for field in PointCloudTileInfo._fields if field != TupleFields.VECTOR
+    ]
     return PointCloud.from_points(
         points=_add_metadata_to_umap(umap_vectors, tile_infos),
         fields=g.DEFAULT_PCD_FIELDS + custom_fields,

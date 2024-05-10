@@ -43,6 +43,18 @@ class ContextFields(StrEnum):
     METHOD = "method"
 
 
+class QdrantFields(StrEnum):
+    """Fields for the queries to the Qdrant API."""
+
+    KMEANS = "kmeans"
+    FPS = "fps"
+    NUM_CLUSTERS = "num_clusters"
+    OPTION = "option"
+    INITIAL_VECTOR = "initial_vector"
+    RANDOM = "random"
+    CENTROIDS = "centroids"
+
+
 ImageInfoLite = namedtuple(
     "ImageInfoLite",
     [
@@ -53,16 +65,13 @@ ImageInfoLite = namedtuple(
         TupleFields.HDF5_URL,
         TupleFields.UPDATED_AT,
     ],
-    # ["id", "dataset_id", "full_url", "cas_url", "hdf5_url", "updated_at"],
 )
 TileInfo = namedtuple(
     "TileInfo",
     [TupleFields.ID, TupleFields.UNIT_SIZE, TupleFields.URL, TupleFields.THUMBNAIL],
-    # ["id", "unitSize", "url", "thumbnail"],
 )
 PointCloudTileInfo = namedtuple(
     "PointCloudTileInfo",
-    # [TupleFields.ID, TupleFields.ATLAS_ID, TupleFields.ATLAS_INDEX, TupleFields.VECTOR],
     ["atlasId", "atlasIndex", "imageId", "vector"],
 )
 

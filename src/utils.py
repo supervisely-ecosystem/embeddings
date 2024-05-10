@@ -16,6 +16,8 @@ import src.globals as g
 
 
 class TupleFields(StrEnum):
+    """Fields of the named tuples used in the project."""
+
     ID = "id"
     DATASET_ID = "dataset_id"
     FULL_URL = "full_url"
@@ -53,12 +55,11 @@ PointCloudTileInfo = namedtuple(
     ["atlasId", "atlasIndex", "imageId", "vector"],
 )
 
-LOG_THRESHOLD = 0.02
-SHOULD_NOT_BE_ASYNC_THRESHOLD = 0.1
-
 
 def to_thread(func: Callable) -> Callable:
     """Decorator to run the function in a separate thread.
+    Can be used for slow synchronous functions inside of the asynchronous code
+    to avoid blocking the event loop.
 
     :param func: Function to run in a separate thread.
     :type func: Callable
@@ -75,6 +76,7 @@ def to_thread(func: Callable) -> Callable:
 
 def with_retries(retries: int = 3, sleep_time: int = 1) -> Callable:
     """Decorator to retry the function in case of an exception.
+    Works only with async functions.
 
     :param retries: Number of retries.
     :type retries: int
@@ -122,18 +124,7 @@ def timer(func: Callable) -> Callable:
             result = await func(*args, **kwargs)
             end_time = perf_counter()
             execution_time = end_time - start_time
-            if execution_time < SHOULD_NOT_BE_ASYNC_THRESHOLD:
-                sly.logger.warning(
-                    f"WARNING!  | {func.__name__} is too fast to be async."
-                )
-            if execution_time > LOG_THRESHOLD:
-                sly.logger.debug(
-                    f"BAD SPEED | {func.__name__}: {execution_time:.4f} sec"
-                )
-            else:
-                sly.logger.debug(
-                    f"OK  SPEED | {func.__name__}: {execution_time:.4f} sec"
-                )
+            sly.logger.debug(f"{execution_time:.4f} sec | {func.__name__}")
             return result
 
         return async_wrapper
@@ -145,17 +136,14 @@ def timer(func: Callable) -> Callable:
             result = func(*args, **kwargs)
             end_time = perf_counter()
             execution_time = end_time - start_time
-            if execution_time > LOG_THRESHOLD:
-                sly.logger.debug(
-                    f"BAD SPEED | {func.__name__}: {execution_time:.4f} sec"
-                )
-            else:
-                sly.logger.debug(
-                    f"OK  SPEED | {func.__name__}: {execution_time:.4f} sec"
-                )
+            _log_execution_time(func.__name__, execution_time)
             return result
 
         return sync_wrapper
+
+
+def _log_execution_time(function_name: str, execution_time: float) -> None:
+    sly.logger.debug(f"{execution_time:.4f} sec | {function_name}")
 
 
 @timer

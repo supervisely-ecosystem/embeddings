@@ -14,6 +14,7 @@ from src.atlas import get_atlas
 from src.layout import layout
 from src.pointclouds import get_tile_infos, save_pointcloud
 from src.utils import (
+    ImageInfoLite,
     _get_api_from_request,
     download_items,
     get_datasets,
@@ -29,7 +30,14 @@ server = app.get_server()
 
 @server.post("/atlas")
 @timer
-async def create_atlas(request: Request):
+async def create_atlas(request: Request) -> None:
+    """Create atlas for the specified project.
+    Context must contain the following key-value pairs:
+        - project_id: Project ID to create the atlas for.
+
+    :param request: FastAPI request object.
+    :type request: Request
+    """
     # Step 1: Unpack data from the request.
     context = request.state.context
     project_id = context.get("project_id")
@@ -62,7 +70,18 @@ async def create_atlas(request: Request):
 
 @server.post("/embeddings")
 @timer
-async def create_embeddings(request: Request):
+async def create_embeddings(request: Request) -> None:
+    """Create embeddings for the specified project.
+    Context must contain the following key-value pairs:
+        - project_id: Project ID to create embeddings for.
+        - image_ids: List of image IDs to create embeddings for.
+
+    Optional key-value pairs in the context:
+        - force: If True, delete the collection and recreate it.
+
+    :param request: FastAPI request object.
+    :type request: Request
+    """
     # Step 1: Unpack data from the request.
     api = _get_api_from_request(request)
     context = request.state.context
@@ -97,17 +116,38 @@ async def create_embeddings(request: Request):
 
 @server.post("/search")
 @timer
-async def search(request: Request):
+async def search(request: Request) -> List[ImageInfoLite]:
+    """Search for similar images in the project using the specified query.
+    Query can be a text prompt or an image URL.
+
+    Context must contain the following key-value pairs:
+        - project_id: Project ID to search in.
+        - query: Query to search for (text prompt or image URL).
+        - limit: Number of images to return.
+
+    :param request: FastAPI request object.
+    :type request: Request
+    :return: List of ImageInfoLite objects.
+    :rtype: List[ImageInfoLite]
+    """
+    # ! DEBUG TRY-EXCEPT SECTION. Remove it after debugging.
+    # Use request.state.context for production.
     try:
         context = request.state.context
     except Exception:
         # For development purposes.
         context = request.get("context")
+    # ! END OF DEBUG SECTION.
     project_id = context.get("project_id")
     query = context.get("query")
     limit = context.get("limit", 10)
     sly.logger.debug(f"Searching for {query} in project {project_id}...")
 
+    # ? Add support for image IDs in the query.
+    # * In this case, we'll need to get the resized image URLs from the API
+    # * and then get vectors from these URLs.
+
+    # Vectorize the query data (can be a text prompt or an image URL).
     query_vectors = await cas.get_vectors([query])
 
     image_infos = await qdrant.search(project_id, query_vectors[0], limit)
@@ -118,12 +158,36 @@ async def search(request: Request):
 
 @server.post("/diverse")
 @timer
-async def diverse(request: Request):
+async def diverse(request: Request) -> List[ImageInfoLite]:
+    """Generate diverse population for the given project using the specified method
+    and limit.
+    Context must contain the following key-value pairs:
+        - project_id: Project ID to generate diverse population for.
+        - method: Method to use for generating diverse population.
+        - limit: Number of images to generate.
+
+    Supported methods:
+        - kmeans
+
+    Optional keys in the context:
+        - option: additional parameter for the method. For the kmeans method.
+            possible values for kmeans:
+                - "random" - will pick random elements from the clusters
+                - "centroids" - will pick centroids of the clusters
+
+    :param request: FastAPI request object.
+    :type request: Request
+    :return: List of ImageInfoLite objects.
+    :rtype: List[ImageInfoLite]
+    """
+    # ! DEBUG TRY-EXCEPT SECTION. Remove it after debugging.
+    # Use request.state.context for production.
     try:
         context = request.state.context
     except Exception:
         # For development purposes.
         context = request.get("context")
+    # ! END OF DEBUG SECTION.
     project_id = context.pop("project_id")
     method = context.pop("method")
     limit = context.pop("limit")

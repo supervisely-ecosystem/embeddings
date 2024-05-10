@@ -10,19 +10,46 @@ import numpy as np
 import supervisely as sly
 from fastapi import Request
 from supervisely._utils import resize_image_url
+from supervisely.collection.str_enum import StrEnum
 
 import src.globals as g
 
+
+class TupleFields(StrEnum):
+    ID = "id"
+    DATASET_ID = "dataset_id"
+    FULL_URL = "full_url"
+    CAS_URL = "cas_url"
+    HDF5_URL = "hdf5_url"
+    UPDATED_AT = "updated_at"
+    UNIT_SIZE = "unitSize"
+    URL = "url"
+    THUMBNAIL = "thumbnail"
+    ATLAS_ID = "atlasId"
+    ATLAS_INDEX = "atlasIndex"
+    VECTOR = "vector"
+
+
 ImageInfoLite = namedtuple(
     "ImageInfoLite",
-    ["id", "dataset_id", "full_url", "cas_url", "hdf5_url", "updated_at"],
+    [
+        TupleFields.ID,
+        TupleFields.DATASET_ID,
+        TupleFields.FULL_URL,
+        TupleFields.CAS_URL,
+        TupleFields.HDF5_URL,
+        TupleFields.UPDATED_AT,
+    ],
+    # ["id", "dataset_id", "full_url", "cas_url", "hdf5_url", "updated_at"],
 )
 TileInfo = namedtuple(
     "TileInfo",
-    ["id", "unitSize", "url", "thumbnail"],
+    [TupleFields.ID, TupleFields.UNIT_SIZE, TupleFields.URL, TupleFields.THUMBNAIL],
+    # ["id", "unitSize", "url", "thumbnail"],
 )
 PointCloudTileInfo = namedtuple(
     "PointCloudTileInfo",
+    # [TupleFields.ID, TupleFields.ATLAS_ID, TupleFields.ATLAS_INDEX, TupleFields.VECTOR],
     ["atlasId", "atlasIndex", "imageId", "vector"],
 )
 

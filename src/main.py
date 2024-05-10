@@ -63,7 +63,7 @@ async def create_atlas(request: Request) -> None:
     )
 
     # Step 5: Create and save pointcloud into PCD file.
-    await save_pointcloud(project_id, tile_infos)
+    await save_pointcloud(project_id, project_atlas_dir, tile_infos)
 
     sly.logger.info(f"Atlas for project {project_id} has been created.")
 
@@ -204,7 +204,7 @@ async def diverse(request: Request) -> List[ImageInfoLite]:
 @timer
 async def process_atlas(
     project_id: int, project_atlas_dir: str, atlas_size: int, tile_size: int
-) -> Tuple[List[Dict], [Dict[List[Dict[str, Union[int, str]]]]]]:
+) -> Tuple[List[Dict], Dict[str, List[Dict[str, Union[int, str]]]]]:
     """Process the atlas for the given project.
     Generate the atlas pages and save them to the project directory (as PNG files).
     Create an atlas manifest and return it as a dictionary.
@@ -223,7 +223,7 @@ async def process_atlas(
         The tiles will be square with the size of tile_size x tile_size.
     :type tile_size: int
     :return: Tuple with the atlas manifest and the list of tile_infos.
-    :rtype: Tuple[List[Dict], [Dict[List[Dict[str, Union[int, str]]]]]
+    :rtype: Tuple[List[Dict], Dict[str, List[Dict[str, Union[int, str]]]]
     """
     images = []
     tile_infos = []

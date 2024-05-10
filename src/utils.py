@@ -143,6 +143,13 @@ def timer(func: Callable) -> Callable:
 
 
 def _log_execution_time(function_name: str, execution_time: float) -> None:
+    """Log the execution time of the function.
+
+    :param function_name: Name of the function.
+    :type function_name: str
+    :param execution_time: Execution time of the function.
+    :type execution_time: float
+    """
     sly.logger.debug(f"{execution_time:.4f} sec | {function_name}")
 
 

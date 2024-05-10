@@ -1,4 +1,3 @@
-import asyncio
 import os
 from typing import List
 
@@ -9,16 +8,17 @@ from pypcd4 import Encoding, PointCloud
 
 import src.globals as g
 import src.qdrant as qdrant
-from src.utils import PointCloudTileInfo, timer
+from src.utils import PointCloudTileInfo, timer, to_thread
 
 
+@to_thread
 @timer
 def get_pointcloud(
-    umap_vectors: np.ndarray, vector_map: List[PointCloudTileInfo]
+    umap_vectors: np.ndarray, tile_infos: List[PointCloudTileInfo]
 ) -> PointCloud:
     custom_fields = [field for field in PointCloudTileInfo._fields if field != "vector"]
     return PointCloud.from_points(
-        points=_add_metadata_to_umap(umap_vectors, vector_map),
+        points=_add_metadata_to_umap(umap_vectors, tile_infos),
         fields=g.DEFAULT_PCD_FIELDS + custom_fields,
         types=[np.float32, np.float32, np.float32, np.int32, np.int32, np.int32],
     )
@@ -26,15 +26,15 @@ def get_pointcloud(
 
 @timer
 def _add_metadata_to_umap(
-    umap_vectors: np.ndarray, vector_map: List[PointCloudTileInfo]
+    umap_vectors: np.ndarray, tile_infos: List[PointCloudTileInfo]
 ) -> np.ndarray:
     with_metadata = np.hstack(
         (
             umap_vectors,
             np.array(
                 [
-                    [entry.atlasId, entry.atlasIndex, entry.imageId]
-                    for entry in vector_map
+                    [tile_info.atlasId, tile_info.atlasIndex, tile_info.imageId]
+                    for tile_info in tile_infos
                 ]
             ),
         )
@@ -43,6 +43,7 @@ def _add_metadata_to_umap(
     return with_metadata
 
 
+@to_thread
 @timer
 def create_umap(vectors: List[np.ndarray], n_components: int = 3) -> np.ndarray:
     reducer = umap.UMAP(n_components=n_components)
@@ -71,14 +72,12 @@ async def get_tile_infos(
 
 
 @timer
-async def create_pointcloud(
-    project_id: int, vector_map: List[PointCloudTileInfo]
+async def save_pointcloud(
+    project_id: int, tile_infos: List[PointCloudTileInfo]
 ) -> None:
-    umap_vectors = await asyncio.to_thread(
-        create_umap, [entry.vector for entry in vector_map]
-    )
+    umap_vectors = await create_umap(tile_info.vector for tile_info in tile_infos)
 
-    cloud = await asyncio.to_thread(get_pointcloud, umap_vectors, vector_map)
+    cloud = await get_pointcloud(umap_vectors, tile_infos)
     project_atlas_dir = os.path.join(g.ATLAS_DIR, str(project_id))
     sly.fs.mkdir(project_atlas_dir)
     cloud.save(

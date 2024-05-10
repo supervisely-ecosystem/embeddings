@@ -22,9 +22,24 @@ def tiles_in_atlas(atlas_size: int, tile_size: int) -> int:
 
 
 @timer
-def save_atlas(
-    atlas_size: int, tile_size: int, tile_infos: List[TileInfo], atlas_id: int
+def get_atlas(
+    atlas_size: int, tile_size: int, tile_infos: List[TileInfo]
 ) -> np.ndarray:
+    """Create an atlas from the given list of tile_infos.
+    The atlas will be filled row by row from the top left corner and sliced by the height
+    if it's not enough tiles to fill the whole atlas. The width of the atlas is always the same as the atlas_size.
+    The atlas will be an RGBA numpy array and it expects the tile_infos to have the thumbnail as a 4-channel RGBA numpy array.
+
+    :param atlas_size: size of the atlas, should be a power of 2, e.g. 2048, 4096, 8192.
+        the width of the atlas will be the same as the atlas_size (it will be a square).
+    :type atlas_size: int
+    :param tile_size: size of the tile, should be a power of 2, e.g. 32, 64, 128.
+    :type tile_size: int
+    :param tile_infos: list of tile_infos to create the atlas from
+    :type tile_infos: List[TileInfo]
+    :return: 4-channel RGBA numpy array of the atlas
+    :rtype: np.ndarray
+    """
     # Receives a list of 4-channel RGBA numpy arrays and returns a single 4-channel RGBA numpy array.
     # Tiles of the atlas are filled row by row from the top left corner.
     # Result height of the atlas depends on the number of given image_nps (will be less than atlas_size if needed).

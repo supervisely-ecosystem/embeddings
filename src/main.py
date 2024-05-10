@@ -8,11 +8,11 @@ from pympler import asizeof
 
 import src.cas as cas
 import src.globals as g
-import src.pointclouds as pointclouds
 import src.qdrant as qdrant
 import src.thumbnails as thumbnails
-from src.atlas import save_atlas
+from src.atlas import get_atlas
 from src.layout import layout
+from src.pointclouds import get_tile_infos, save_pointcloud
 from src.utils import (
     _get_api_from_request,
     download_items,
@@ -27,7 +27,7 @@ app = sly.Application(layout=layout)
 server = app.get_server()
 
 
-@server.post("/create_atlas")
+@server.post("/atlas")
 @timer
 async def create_atlas(request: Request):
     # Step 1: Unpack data from the request.
@@ -39,7 +39,7 @@ async def create_atlas(request: Request):
     project_atlas_dir = os.path.join(g.ATLAS_DIR, str(project_id))
     sly.fs.mkdir(project_atlas_dir, remove_content_if_exists=True)
 
-    # Step 3: Save atlas pages and prepare vector and atlas maps.
+    # Step 3: Save atlas pages and prepare atlas map.
     atlas_map, tile_infos = await process_atlas(
         project_id,
         project_atlas_dir,
@@ -54,8 +54,8 @@ async def create_atlas(request: Request):
         indent=4,
     )
 
-    # Step 5: Create and save the vector map to the PCD file.
-    await pointclouds.create_pointcloud(project_id, tile_infos)
+    # Step 5: Create and save pointcloud into PCD file.
+    await save_pointcloud(project_id, tile_infos)
 
     sly.logger.info(f"Atlas for project {project_id} has been created.")
 
@@ -149,10 +149,9 @@ async def process_atlas(
         image_ids = [tile.id for tile in tiles]
         sly.logger.debug(f"Processing tile batch #{idx}, received {len(tiles)} tiles.")
 
-        # Get atlas image and map. Image is a numpy array, map is a list of dictionaries.
-        page_image = save_atlas(atlas_size, tile_size, tiles, atlas_id=idx)
+        page_image = get_atlas(atlas_size, tile_size, tiles)
 
-        tile_infos.extend(await pointclouds.get_tile_infos(idx, project_id, image_ids))
+        tile_infos.extend(await get_tile_infos(idx, project_id, image_ids))
 
         images.append(
             {
@@ -165,7 +164,7 @@ async def process_atlas(
         )
 
         if sly.is_development():
-            # Checking how much memory the vector map takes.
+            # Checking how much memory the tile_infos take.
             tile_infos_size = asizeof.asizeof(tile_infos) / 1024 / 1024
             sly.logger.debug(f"TileInfos size: {tile_infos_size:.2f} MB")
 

@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import supervisely as sly
 from fastapi import Request
@@ -140,7 +140,27 @@ async def diverse(request: Request):
 @timer
 async def process_atlas(
     project_id: int, project_atlas_dir: str, atlas_size: int, tile_size: int
-) -> Tuple[List[Dict], List[Dict]]:
+) -> Tuple[List[Dict], [Dict[List[Dict[str, Union[int, str]]]]]]:
+    """Process the atlas for the given project.
+    Generate the atlas pages and save them to the project directory (as PNG files).
+    Create an atlas manifest and return it as a dictionary.
+    Prepare the list of tile_infos for the pointcloud creation. The order of tile_infos
+    will be the same as the order of the tiles in the atlas.
+
+    :param project_id: Project ID to create the atlas for.
+    :type project_id: int
+    :param project_atlas_dir: Directory to save the atlas pages and later the atlas manifest
+        and the pointcloud.
+    :type project_atlas_dir: str
+    :param atlas_size: Size of the atlas in pixels. Should be a power of 2.
+        The atlas will be a square with the size of atlas_size x atlas_size.
+    :type atlas_size: int
+    :param tile_size: Size of the tile in pixels. Should be a power of 2.
+        The tiles will be square with the size of tile_size x tile_size.
+    :type tile_size: int
+    :return: Tuple with the atlas manifest and the list of tile_infos.
+    :rtype: Tuple[List[Dict], [Dict[List[Dict[str, Union[int, str]]]]]
+    """
     images = []
     tile_infos = []
 
@@ -149,10 +169,14 @@ async def process_atlas(
         image_ids = [tile.id for tile in tiles]
         sly.logger.debug(f"Processing tile batch #{idx}, received {len(tiles)} tiles.")
 
+        # Get 4-channel RGBA numpy array of the atlas.
         page_image = get_atlas(atlas_size, tile_size, tiles)
 
+        # Add corresponding tile_infos to the list. It will be used to create the pointcloud.
         tile_infos.extend(await get_tile_infos(idx, project_id, image_ids))
 
+        # This dictionary will be used to create the JSON file with the atlas manifest
+        # and will be used in Embeddings widget to display the atlas.
         images.append(
             {
                 # TODO: Add Enum with keys to avoid using strings.
@@ -174,6 +198,7 @@ async def process_atlas(
             page_image,
             remove_alpha_channel=False,
         )
+        sly.logger.debug(f"Atlas page {file_name} has been saved.")
 
     atlas_map = {
         "images": images,
@@ -185,7 +210,23 @@ async def process_atlas(
 @timer
 async def process_images(
     api: sly.Api, project_id: int, dataset_id: int = None, image_ids: List[int] = None
-):
+) -> None:
+    """Process images from the specified project. Download images, save them to HDF5,
+    get vectors from the images and upsert them to Qdrant.
+    Either dataset_id or image_ids should be provided. If the dataset_id is provided,
+    all images from the dataset will be processed. If the image_ids are provided,
+    only images with the specified IDs will be processed.
+
+    :param api: Supervisely API object.
+    :type api: sly.Api
+    :param project_id: Project ID to process images from.
+    :type project_id: int
+    :param dataset_id: Dataset ID to process images from.
+    :type dataset_id: int, optional
+    :param image_ids: List of image IDs to process.
+    :type image_ids: List[int], optional
+    """
+    # Get image infos from the project.
     image_infos = await get_image_infos(
         api,
         g.IMAGE_SIZE_FOR_CAS,

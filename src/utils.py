@@ -10,12 +10,11 @@ import numpy as np
 import supervisely as sly
 from fastapi import Request
 from supervisely._utils import resize_image_url
-from supervisely.collection.str_enum import StrEnum
 
 import src.globals as g
 
 
-class TupleFields(StrEnum):
+class TupleFields:
     """Fields of the named tuples used in the project."""
 
     ID = "id"
@@ -32,7 +31,7 @@ class TupleFields(StrEnum):
     VECTOR = "vector"
 
 
-class ContextFields(StrEnum):
+class ContextFields:
     """Fields of the context in request objects."""
 
     PROJECT_ID = "project_id"
@@ -43,7 +42,7 @@ class ContextFields(StrEnum):
     METHOD = "method"
 
 
-class QdrantFields(StrEnum):
+class QdrantFields:
     """Fields for the queries to the Qdrant API."""
 
     KMEANS = "kmeans"
@@ -94,14 +93,20 @@ def to_thread(func: Callable) -> Callable:
     return wrapper
 
 
-def with_retries(retries: int = 3, sleep_time: int = 1) -> Callable:
+def with_retries(
+    retries: int = 3, sleep_time: int = 1, on_failure: Callable = None
+) -> Callable:
     """Decorator to retry the function in case of an exception.
-    Works only with async functions.
+    Works only with async functions. Custom function can be executed on failure.
+    NOTE: The on_failure function should be idempotent and synchronous.
 
     :param retries: Number of retries.
     :type retries: int
     :param sleep_time: Time to sleep between retries.
     :type sleep_time: int
+    :param on_failure: Function to execute on failure, if None, raise an exception.
+    :type on_failure: Callable, optional
+    :raises Exception: If the function fails after all retries.
     :return: Decorator.
     :rtype: Callable
     """
@@ -117,9 +122,12 @@ def with_retries(retries: int = 3, sleep_time: int = 1) -> Callable:
                         f"Failed to execute {func.__name__}, retrying. Error: {str(e)}"
                     )
                     await asyncio.sleep(sleep_time)
-            raise Exception(
-                f"Failed to execute {func.__name__} after {retries} retries."
-            )
+            if on_failure is not None:
+                return on_failure()
+            else:
+                raise Exception(
+                    f"Failed to execute {func.__name__} after {retries} retries."
+                )
 
         return async_function_with_retries
 
@@ -243,6 +251,11 @@ async def download_items(urls: List[str]) -> List[np.ndarray]:
         return await asyncio.gather(*[download_item(session, url) for url in urls])
 
 
+@with_retries(
+    on_failure=lambda: np.zeros(
+        (g.IMAGE_SIZE_FOR_ATLAS, g.IMAGE_SIZE_FOR_ATLAS, 3), dtype=np.uint8
+    )
+)
 async def download_item(session: aiohttp.ClientSession, url: str) -> np.ndarray:
     """Asynchronously download image from the URL and return it as numpy array.
 

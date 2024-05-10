@@ -87,6 +87,7 @@ async def create_embeddings(request: Request) -> None:
     api = _get_api_from_request(request)
     context = request.state.context
     project_id = context.get(ContextFields.PROJECT_ID)
+    sly.logger.debug(f"Creating embeddings for project {project_id}...")
     # If context contains list of image_ids it means that we're
     # updating embeddings for specific images, otherwise we're updating
     # the whole project.
@@ -113,6 +114,8 @@ async def create_embeddings(request: Request) -> None:
     else:
         # Step 3B: If image_ids are provided, process images with specific IDs.
         await process_images(api, project_id, image_ids=image_ids)
+
+    sly.logger.debug(f"Embeddings for project {project_id} have been created.")
 
 
 @server.post("/search")

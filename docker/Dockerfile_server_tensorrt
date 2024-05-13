@@ -5,7 +5,7 @@ FROM nvcr.io/nvidia/tensorrt:${TENSORRT_VERSION}-py3
 ARG JINA_VERSION=3.7.0
 
 RUN pip3 install --default-timeout=1000 --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
-RUN pip3 -m pip install --default-timeout=1000 --no-cache-dir "jina[standard]==${JINA_VERSION}"
+RUN pip3 install --default-timeout=1000 --no-cache-dir "jina[standard]==${JINA_VERSION}"
 
 RUN python3 -m pip install --no-cache-dir "clip-server[tensorrt]"
 

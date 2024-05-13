@@ -5,6 +5,14 @@ FROM nvcr.io/nvidia/tensorrt:${TENSORRT_VERSION}-py3
 ARG JINA_VERSION=3.7.0
 ARG BACKEND_TAG=tensorrt
 
+LABEL org.opencontainers.image.vendor="Jina AI Limited" \
+      org.opencontainers.image.licenses="Apache 2.0" \
+      org.opencontainers.image.title="CLIP-as-Service" \
+      org.opencontainers.image.description="Embed images and sentences into fixed-length vectors with CLIP" \
+      org.opencontainers.image.authors="hello@jina.ai" \
+      org.opencontainers.image.url="clip-as-service" \
+      org.opencontainers.image.documentation="https://clip-as-service.jina.ai/"
+
 RUN pip3 install --default-timeout=1000 --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
 RUN pip3 install --default-timeout=1000 --no-cache-dir "jina[standard]==${JINA_VERSION}"
 

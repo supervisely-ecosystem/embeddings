@@ -2,20 +2,7 @@ ARG TENSORRT_VERSION=24.04
 
 FROM nvcr.io/nvidia/tensorrt:${TENSORRT_VERSION}-py3
 
-ARG JINA_VERSION=3.25.1
-ARG BACKEND_TAG=tensorrt
-
 RUN pip3 install --default-timeout=1000 --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu121
-RUN pip3 install --default-timeout=1000 --no-cache-dir "jina[standard]==${JINA_VERSION}"
 RUN python3 -m pip install --no-cache-dir "clip-server[tensorrt]"
 
-RUN echo -e "\
-jtype: CLIPEncoder\n\
-metas:\n\
-  py_modules:\n\
-    - clip_server.executors.clip_$BACKEND_TAG\n\
-" > /tmp/config.yml
-
-
-ENTRYPOINT ["jina", "executor", "--uses", "/tmp/config.yml"]
-# CMD ["python3", "-m", "clip_server"]
+CMD ["python3", "-m", "clip_server"]

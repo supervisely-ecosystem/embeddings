@@ -2,6 +2,8 @@ ARG TENSORRT_VERSION=22.04
 
 FROM nvcr.io/nvidia/tensorrt:${TENSORRT_VERSION}-py3
 
+ENV CUDA_HOME /usr/local/cuda-12.1
+
 ARG JINA_VERSION=3.25.1
 ARG BACKEND_TAG=tensorrt
 

@@ -18,7 +18,7 @@ RUN pip3 install --default-timeout=1000 --no-cache-dir "jina[standard]==${JINA_V
 
 RUN python3 -m pip install --no-cache-dir "clip-server[tensorrt]"
 
-RUN echo "\
+RUN echo -e "\
 jtype: CLIPEncoder\n\
 metas:\n\
   py_modules:\n\

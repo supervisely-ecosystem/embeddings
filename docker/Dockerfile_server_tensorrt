@@ -14,8 +14,6 @@ RUN python3 -m pip install --no-cache-dir "clip-server[tensorrt]"
 
 RUN pip3 list
 
-RUN which nvidia-smi
-
 RUN echo -e "\
 jtype: CLIPEncoder\n\
 metas:\n\

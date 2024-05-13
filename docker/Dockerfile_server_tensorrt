@@ -11,7 +11,7 @@ RUN python3 -m pip install --no-cache-dir "clip-server[tensorrt]"
 
 RUN pip3 list
 RUN ls /usr/local
-ENV CUDA_HOME /usr/local/cuda-12
+ENV CUDA_HOME /usr/local/cuda
 
 RUN echo -e "\
 jtype: CLIPEncoder\n\

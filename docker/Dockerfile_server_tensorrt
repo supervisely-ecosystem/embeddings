@@ -1,5 +1,5 @@
 ARG TENSORRT_VERSION=24.04
-ARG CUDA_PATH=/usr/local/cuda-12.1
+ARG CUDA_PATH=/usr/local/cuda-12
 
 FROM nvcr.io/nvidia/tensorrt:${TENSORRT_VERSION}-py3
 

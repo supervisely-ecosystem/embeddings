@@ -17,6 +17,7 @@ RUN pip3 list
 
 # Check if CUDA_HOME directory exists
 RUN if [ -d "${CUDA_PATH}" ]; then echo "CUDA_HOME directory exists"; else echo "CUDA_HOME directory does not exist"; fi
+RUN ls /usr/local
 
 RUN echo -e "\
 jtype: CLIPEncoder\n\

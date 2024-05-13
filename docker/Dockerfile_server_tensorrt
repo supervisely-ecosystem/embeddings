@@ -8,7 +8,7 @@ ARG BACKEND_TAG=tensorrt
 RUN pip3 install --default-timeout=1000 --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu121
 RUN pip3 install --default-timeout=1000 --no-cache-dir "jina[standard]==${JINA_VERSION}"
 
-ENV CUDA_HOME /usr/local/cuda-12
+ENV CUDA_HOME /usr/local/cuda-12.4
 
 RUN python3 -m pip install --no-cache-dir "clip-server[tensorrt]"
 

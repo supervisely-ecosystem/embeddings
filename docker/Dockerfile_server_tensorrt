@@ -13,12 +13,13 @@ RUN pip3 list
 RUN ls /usr/local
 ENV CUDA_HOME /usr/local/cuda-12.4
 
-RUN echo -e "\
-jtype: CLIPEncoder\n\
-metas:\n\
-  py_modules:\n\
-    - clip_server.executors.clip_$BACKEND_TAG\n\
-" > /tmp/config.yml
+# RUN echo -e "\
+# jtype: CLIPEncoder\n\
+# metas:\n\
+#   py_modules:\n\
+#     - clip_server.executors.clip_$BACKEND_TAG\n\
+# " > /tmp/config.yml
 
 
-ENTRYPOINT ["jina", "executor", "--uses", "/tmp/config.yml"]
+# ENTRYPOINT ["jina", "executor", "--uses", "/tmp/config.yml"]
+CMD ["python3", "-m", "clip_server"]

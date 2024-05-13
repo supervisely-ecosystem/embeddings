@@ -1,17 +1,17 @@
-ARG TENSORRT_VERSION=24.04
+ARG TENSORRT_VERSION=22.04
 
 FROM nvcr.io/nvidia/tensorrt:${TENSORRT_VERSION}-py3
 
-ARG JINA_VERSION=3.25.1
+ARG JINA_VERSION=3.7.0
 ARG BACKEND_TAG=tensorrt
 
-RUN pip3 install --default-timeout=1000 --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu121
+RUN pip3 install --default-timeout=1000 --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
 RUN pip3 install --default-timeout=1000 --no-cache-dir "jina[standard]==${JINA_VERSION}"
 RUN python3 -m pip install --no-cache-dir "clip-server[tensorrt]"
 
 RUN pip3 list
 RUN ls /usr/local
-ENV CUDA_HOME /usr/local/cuda
+ENV CUDA_HOME /usr/local/cuda-12.4
 
 RUN echo -e "\
 jtype: CLIPEncoder\n\

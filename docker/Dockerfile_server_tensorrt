@@ -1,4 +1,5 @@
 ARG TENSORRT_VERSION=24.04
+ARG CUDA_PATH=/usr/local/cuda-12.1
 
 FROM nvcr.io/nvidia/tensorrt:${TENSORRT_VERSION}-py3
 
@@ -8,11 +9,14 @@ ARG BACKEND_TAG=tensorrt
 RUN pip3 install --default-timeout=1000 --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu121
 RUN pip3 install --default-timeout=1000 --no-cache-dir "jina[standard]==${JINA_VERSION}"
 
-ENV CUDA_HOME /usr/local/cuda-12.1
+ENV CUDA_HOME $CUDA_PATH
 
 RUN python3 -m pip install --no-cache-dir "clip-server[tensorrt]"
 
 RUN pip3 list
+
+# Check if CUDA_HOME directory exists
+RUN if [ -d "${CUDA_PATH}" ]; then echo "CUDA_HOME directory exists"; else echo "CUDA_HOME directory does not exist"; fi
 
 RUN echo -e "\
 jtype: CLIPEncoder\n\

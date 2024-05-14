@@ -1,4 +1,4 @@
-FROM supervisely/base-py-sdk:6.73.8
+FROM supervisely/base-py-sdk:6.73.86
 
 RUN pip install --no-cache-dir clip-client==0.8.3 \
     qdrant-client==1.9.0 \

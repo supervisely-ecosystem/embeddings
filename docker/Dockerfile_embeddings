@@ -1,12 +1,4 @@
-FROM ubuntu:22.04
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y \
-    python3.12 \
-    python3-pip \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.11
 
 RUN pip install --no-cache-dir supervisely==6.73.86 \
     clip-client==0.8.3 \

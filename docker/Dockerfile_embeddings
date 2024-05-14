@@ -1,10 +1,9 @@
-FROM supervisely/base-py-sdk:6.73.86
+FROM supervisely/base-py-sdk:6.73.8
 
-RUN pip install --no-cache-dir --upgrade supervisely==6.73.86
-RUN pip install --no-cache-dir clip-client==0.8.3
-RUN pip install --no-cache-dir qdrant-client==1.9.0
-RUN pip install --no-cache-dir h5py==3.11.0
-RUN pip install --no-cache-dir pympler==1.0.1
-RUN pip install --no-cache-dir umap_learn==0.5.6
-RUN pip install --no-cache-dir pypcd4==0.4.11
-RUN pip install --no-cache-dir aiocron==1.8
+RUN pip install --no-cache-dir clip-client==0.8.3 \
+    qdrant-client==1.9.0 \
+    h5py==3.11.0 \
+    pympler==1.0.1 \
+    umap_learn==0.5.6 \
+    pypcd4==0.4.11 \
+    aiocron==1.8

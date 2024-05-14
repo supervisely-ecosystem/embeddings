@@ -1,6 +1,6 @@
 FROM supervisely/base-py-sdk:6.73.86
 
-RUN pip install --no-cahe-dir --upgrade supervisely==6.73.86
+RUN pip install --no-cache-dir --upgrade supervisely==6.73.86
 RUN pip install --no-cache-dir clip-client==0.8.3
 RUN pip install --no-cache-dir qdrant-client==1.9.0
 RUN pip install --no-cache-dir h5py==3.11.0

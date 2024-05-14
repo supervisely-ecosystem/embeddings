@@ -1,0 +1,18 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    python3.12 \
+    python3-pip \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir supervisely==6.73.78 \
+    clip-client==0.8.3 \
+    qdrant-client==1.9.0 \
+    h5py==3.11.0 \
+    pympler==1.0.1 \
+    umap_learn==0.5.6 \
+    pypcd4==0.4.11 \
+    aiocron==1.8

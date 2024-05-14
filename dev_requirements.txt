@@ -1,4 +1,4 @@
-supervisely==6.73.78
+supervisely==6.73.86
 clip-client==0.8.3
 qdrant-client==1.9.0
 h5py==3.11.0

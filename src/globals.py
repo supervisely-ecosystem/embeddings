@@ -5,26 +5,22 @@ from aiocron import crontab
 from dotenv import load_dotenv
 
 if sly.is_development():
-    load_dotenv(os.path.expanduser("~/supervisely-prod.env"))
+    load_dotenv(os.path.expanduser("~/supervisely.env"))
     load_dotenv("local.env")
 
-# ! DEBUG! Remove team_id and workspace_id from the environment variables.
-# Also, remove creating sly.Api instance.
-# # region envvars
+api = sly.Api.from_env()
+sly.logger.debug(f"Connected to {api.server_address}.")
+api.file.load_dotenv_from_teamfiles()
 
+# # region envvars
 qdrant_host = os.getenv("modal.state.qdrantHost")
 cas_host = os.getenv("modal.state.casHost")
 # endregion
+
 if not qdrant_host:
     raise ValueError("QDRANT_HOST is not set in the environment variables")
 if not cas_host:
     raise ValueError("CAS_HOST is not set in the environment variables")
-
-if sly.is_development():
-    api: sly.Api = sly.Api.from_env()
-    sly.logger.debug(f"Connected to {api.server_address}.")
-else:
-    api = None
 
 # region constants
 STORAGE_DIR = sly.env.agent_storage()

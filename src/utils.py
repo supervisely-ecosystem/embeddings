@@ -31,7 +31,7 @@ class TupleFields:
     VECTOR = "vector"
 
 
-class ContextFields:
+class StateFields:
     """Fields of the context in request objects."""
 
     PROJECT_ID = "project_id"
@@ -362,4 +362,5 @@ def _get_api_from_request(request: Request) -> sly.Api:
     if sly.is_development():
         return g.api
     else:
+        sly.logger.debug("Not in development mode, getting API from the state.")
         return request.state.api

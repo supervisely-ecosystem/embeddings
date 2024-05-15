@@ -12,8 +12,8 @@ if sly.is_development():
 # Also, remove creating sly.Api instance.
 # # region envvars
 
-qdrant_host = os.getenv("QDRANT_HOST")
-cas_host = os.getenv("CAS_HOST")
+qdrant_host = os.getenv("modal.state.qdrantHost")
+cas_host = os.getenv("modal.state.casHost")
 # endregion
 if not qdrant_host:
     raise ValueError("QDRANT_HOST is not set in the environment variables")

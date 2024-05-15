@@ -16,11 +16,15 @@ api.file.load_dotenv_from_teamfiles()
 qdrant_host = os.getenv("modal.state.qdrantHost")
 cas_host = os.getenv("modal.state.casHost")
 # endregion
+if not qdrant_host or not cas_host:
+    sly.logger.debug("Showing all environment variables:")
+    for key, value in os.environ.items():
+        sly.logger.debug(f"{key}: {value}")
 
 if not qdrant_host:
-    raise ValueError("QDRANT_HOST is not set in the environment variables")
+    raise ValueError("modal.state.qdrantHost is not set in the environment variables")
 if not cas_host:
-    raise ValueError("CAS_HOST is not set in the environment variables")
+    raise ValueError("modal.state.casHost is not set in the environment variables")
 
 # region constants
 STORAGE_DIR = sly.env.agent_storage()

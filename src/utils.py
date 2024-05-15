@@ -86,9 +86,16 @@ def to_thread(func: Callable) -> Callable:
     :rtype: Callable
     """
 
+    # For Python 3.9+.
+    # @wraps(func)
+    # def wrapper(*args, **kwargs):
+    #     return asyncio.to_thread(func, *args, **kwargs)
+
+    # For Python 3.7+.
     @wraps(func)
     def wrapper(*args, **kwargs):
-        return asyncio.to_thread(func, *args, **kwargs)
+        loop = asyncio.get_event_loop()
+        return loop.run_in_executor(None, func, *args, **kwargs)
 
     return wrapper
 

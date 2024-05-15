@@ -84,6 +84,7 @@ async def create_embeddings(request: Request) -> None:
     # Step 1: Unpack data from the request.
     api = _get_api_from_request(request)
     context = request.state.context
+    sly.logger.debug(f"State of the request: {request.state}")
     sly.logger.debug(f"Context of the request: {context}")
     project_id = context.get(ContextFields.PROJECT_ID)
     sly.logger.debug(f"Creating embeddings for project {project_id}...")

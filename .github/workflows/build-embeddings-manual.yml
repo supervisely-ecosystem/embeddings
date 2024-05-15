@@ -23,4 +23,4 @@ jobs:
         context: .
         file: docker/Dockerfile_embeddings
         push: true
-        tags: supervisely/embeddings:latest
+        tags: supervisely/embeddings:0.1.0

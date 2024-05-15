@@ -1,6 +1,6 @@
 import asyncio
 from collections import namedtuple
-from functools import wraps
+from functools import partial, wraps
 from time import perf_counter
 from typing import Callable, List
 
@@ -95,7 +95,8 @@ def to_thread(func: Callable) -> Callable:
     @wraps(func)
     def wrapper(*args, **kwargs):
         loop = asyncio.get_event_loop()
-        return loop.run_in_executor(None, func, *args, **kwargs)
+        func_with_args = partial(func, *args, **kwargs)
+        return loop.run_in_executor(None, func_with_args)
 
     return wrapper
 

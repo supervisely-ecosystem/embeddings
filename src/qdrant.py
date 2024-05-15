@@ -17,7 +17,7 @@ client = AsyncQdrantClient(g.qdrant_host)
 
 try:
     QdrantClient(g.qdrant_host).get_collections()
-    sly.logger.debug(f"Connected to Qdrant at {g.qdrant_host}")
+    sly.logger.info(f"Connected to Qdrant at {g.qdrant_host}")
 except Exception as e:
     sly.logger.error(f"Failed to connect to Qdrant at {g.qdrant_host} with error: {e}")
 

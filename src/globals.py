@@ -10,9 +10,11 @@ if sly.is_development():
 
 api = sly.Api.from_env()
 sly.logger.debug(f"Connected to {api.server_address}.")
-api.file.load_dotenv_from_teamfiles()
+api.file.load_dotenv_from_teamfiles(override=True)
 
-# # region envvars
+# region envvars
+# The first option (modal.state) comes from the Modal window, the second one (QDRANT_HOST)
+# comes from the .env file.
 qdrant_host = os.getenv("modal.state.qdrantHost") or os.getenv("QDRANT_HOST")
 cas_host = os.getenv("modal.state.casHost") or os.getenv("CAS_HOST")
 # endregion

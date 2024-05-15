@@ -11,7 +11,6 @@ import src.globals as g
 import src.qdrant as qdrant
 import src.thumbnails as thumbnails
 from src.atlas import get_atlas
-from src.layout import layout
 from src.pointclouds import get_tile_infos, save_pointcloud
 from src.utils import (
     ContextFields,
@@ -24,8 +23,7 @@ from src.utils import (
     timer,
 )
 
-layout = layout if sly.is_development() else None
-app = sly.Application(layout=layout)
+app = sly.Application()
 server = app.get_server()
 
 

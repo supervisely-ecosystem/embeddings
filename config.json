@@ -2,6 +2,11 @@
   "type": "app",
   "version": "2.0.0",
   "name": "Embeddings",
+  "modal_template": "src/modal.html",
+  "modal_template_state": {
+    "qdrantHost": "",
+    "casHost": ""
+  },
   "description": "---",
   "categories": ["system"],
   "icon": "",

@@ -17,7 +17,6 @@ from src.utils import (
     ImageInfoLite,
     StateFields,
     TupleFields,
-    _get_api_from_request,
     download_items,
     get_datasets,
     get_image_infos,
@@ -29,9 +28,9 @@ app = sly.Application()
 server = app.get_server()
 
 
-@server.post("/atlas")
+@app.event(Event.Atlas, use_state=True)
 @timer
-async def create_atlas(request: Request) -> None:
+async def create_atlas(api: sly.Api, event: Event.Atlas) -> None:
     """Create atlas for the specified project.
     Context must contain the following key-value pairs:
         - project_id: Project ID to create the atlas for.
@@ -39,21 +38,16 @@ async def create_atlas(request: Request) -> None:
     :param request: FastAPI request object.
     :type request: Request
     """
-    # Step 1: Unpack data from the request.
-    api = _get_api_from_request(request)
-    state = request.state.state
-    sly.logger.debug(f"Retrieved state of the request: {state}.")
-    project_id = state.get(StateFields.PROJECT_ID)
-    sly.logger.info(f"Creating atlas for project {project_id}...")
+    sly.logger.info(f"Creating atlas for project {event.project_id}.")
 
     # Step 2: Prepare the project directory.
-    project_atlas_dir = os.path.join(g.ATLAS_DIR, str(project_id))
+    project_atlas_dir = os.path.join(g.ATLAS_DIR, str(event.project_id))
     sly.fs.mkdir(project_atlas_dir, remove_content_if_exists=True)
 
     # Step 3: Save atlas pages and prepare atlas map.
     atlas_map, tile_infos = await process_atlas(
         api,
-        project_id,
+        event.project_id,
         project_atlas_dir,
         atlas_size=g.ATLAS_SIZE,
         tile_size=g.IMAGE_SIZE_FOR_ATLAS,
@@ -62,32 +56,20 @@ async def create_atlas(request: Request) -> None:
     # Step 4: Save atlas map to the JSON file.
     json.dump(
         atlas_map,
-        open(os.path.join(project_atlas_dir, f"{project_id}.json"), "w"),
+        open(os.path.join(project_atlas_dir, f"{event.project_id}.json"), "w"),
         indent=4,
     )
 
     # Step 5: Create and save pointcloud into PCD file.
-    await save_pointcloud(project_id, project_atlas_dir, tile_infos)
+    await save_pointcloud(event.project_id, project_atlas_dir, tile_infos)
 
-    sly.logger.info(f"Atlas for project {project_id} has been created.")
+    sly.logger.info(f"Atlas for project {event.project_id} has been created.")
 
 
-# @server.post("/embeddings")
 @app.event(Event.Embeddings, use_state=True)
 @timer
 async def create_embeddings(api: sly.Api, event: Event.Embeddings) -> None:
-    """Create embeddings for the specified project.
-    Context must contain the following key-value pairs:
-        - project_id: Project ID to create embeddings for.
-        - image_ids: List of image IDs to create embeddings for.
-
-    Optional key-value pairs in the context:
-        - force: If True, delete the collection and recreate it.
-
-    :param request: FastAPI request object.
-    :type request: Request
-    """
-    sly.logger.debug(
+    sly.logger.info(
         f"Started creating embeddings for project {event.project_id}. "
         f"Force: {event.force}, Image IDs: {event.image_ids}."
     )

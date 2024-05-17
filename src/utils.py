@@ -351,19 +351,3 @@ def get_image_infos(
         )
         for image_info in image_infos
     ]
-
-
-def _get_api_from_request(request: Request) -> sly.Api:
-    """Returns API instance from the request. In development mode, API instance
-    is stored in the global variable, in production mode it's stored in the state.
-
-    :param request: FastAPI request instance.
-    :type request: Request
-    :return: Instance of supervisely API.
-    :rtype: sly.Api
-    """
-    if sly.is_development():
-        return g.api
-    else:
-        sly.logger.debug("Not in development mode, getting API from the state.")
-        return request.state.api

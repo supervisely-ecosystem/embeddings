@@ -8,7 +8,6 @@ import aiohttp
 import cv2
 import numpy as np
 import supervisely as sly
-from fastapi import Request
 from supervisely._utils import resize_image_url
 
 import src.globals as g
@@ -33,8 +32,8 @@ class TupleFields:
     IMAGES = "images"
 
 
-class StateFields:
-    """Fields of the context in request objects."""
+class EventFields:
+    """Fields of the event in request objects."""
 
     PROJECT_ID = "project_id"
     IMAGE_IDS = "image_ids"
@@ -48,10 +47,8 @@ class QdrantFields:
     """Fields for the queries to the Qdrant API."""
 
     KMEANS = "kmeans"
-    FPS = "fps"
     NUM_CLUSTERS = "num_clusters"
     OPTION = "option"
-    INITIAL_VECTOR = "initial_vector"
     RANDOM = "random"
     CENTROIDS = "centroids"
 

@@ -3,7 +3,6 @@ import os
 from typing import Dict, List, Tuple, Union
 
 import supervisely as sly
-from fastapi import Request
 from pympler import asizeof
 
 import src.cas as cas
@@ -15,7 +14,6 @@ from src.events import Event
 from src.pointclouds import get_tile_infos, save_pointcloud
 from src.utils import (
     ImageInfoLite,
-    StateFields,
     TupleFields,
     download_items,
     get_datasets,
@@ -31,20 +29,13 @@ server = app.get_server()
 @app.event(Event.Atlas, use_state=True)
 @timer
 async def create_atlas(api: sly.Api, event: Event.Atlas) -> None:
-    """Create atlas for the specified project.
-    Context must contain the following key-value pairs:
-        - project_id: Project ID to create the atlas for.
-
-    :param request: FastAPI request object.
-    :type request: Request
-    """
     sly.logger.info(f"Creating atlas for project {event.project_id}.")
 
-    # Step 2: Prepare the project directory.
+    # Step 1: Prepare the project directory.
     project_atlas_dir = os.path.join(g.ATLAS_DIR, str(event.project_id))
     sly.fs.mkdir(project_atlas_dir, remove_content_if_exists=True)
 
-    # Step 3: Save atlas pages and prepare atlas map.
+    # Step 2: Save atlas pages and prepare atlas map.
     atlas_map, tile_infos = await process_atlas(
         api,
         event.project_id,
@@ -53,14 +44,14 @@ async def create_atlas(api: sly.Api, event: Event.Atlas) -> None:
         tile_size=g.IMAGE_SIZE_FOR_ATLAS,
     )
 
-    # Step 4: Save atlas map to the JSON file.
+    # Step 3: Save atlas map to the JSON file.
     json.dump(
         atlas_map,
         open(os.path.join(project_atlas_dir, f"{event.project_id}.json"), "w"),
         indent=4,
     )
 
-    # Step 5: Create and save pointcloud into PCD file.
+    # Step 4: Create and save pointcloud into PCD file.
     await save_pointcloud(event.project_id, project_atlas_dir, tile_infos)
 
     sly.logger.info(f"Atlas for project {event.project_id} has been created.")
@@ -75,7 +66,7 @@ async def create_embeddings(api: sly.Api, event: Event.Embeddings) -> None:
     )
 
     if event.force:
-        # Step 1.1: If force is True, delete the collection and recreate it.
+        # Step 1: If force is True, delete the collection and recreate it.
         sly.logger.debug(f"Force enabled, deleting collection {event.project_id}.")
         await qdrant.delete_collection(event.project_id)
         sly.logger.debug(f"Deleting HDF5 file for project {event.project_id}.")
@@ -98,78 +89,41 @@ async def create_embeddings(api: sly.Api, event: Event.Embeddings) -> None:
     sly.logger.debug(f"Embeddings for project {event.project_id} have been created.")
 
 
-@server.post("/search")
+@app.event(Event.Search, use_state=True)
 @timer
-async def search(request: Request) -> List[ImageInfoLite]:
-    """Search for similar images in the project using the specified query.
-    Query can be a text prompt or an image URL.
-
-    Context must contain the following key-value pairs:
-        - project_id: Project ID to search in.
-        - query: Query to search for (text prompt or image URL).
-        - limit: Number of images to return.
-
-    :param request: FastAPI request object.
-    :type request: Request
-    :return: List of ImageInfoLite objects.
-    :rtype: List[ImageInfoLite]
-    """
-    state = request.state.state
-    sly.logger.debug(f"Retrieved state of the request: {state}.")
-
-    project_id = state.get(StateFields.PROJECT_ID)
-    query = state.get(StateFields.QUERY)
-    limit = state.get(StateFields.LIMIT, 10)
-    sly.logger.debug(f"Searching for {query} in project {project_id}...")
+async def search(api: sly.Api, event: Event.Search) -> List[ImageInfoLite]:
+    sly.logger.info(
+        f"Searching for similar images in project {event.project_id}. "
+        f"Query: {event.query}, Limit: {event.limit}."
+    )
 
     # ? Add support for image IDs in the query.
     # * In this case, we'll need to get the resized image URLs from the API
     # * and then get vectors from these URLs.
 
     # Vectorize the query data (can be a text prompt or an image URL).
-    query_vectors = await cas.get_vectors([query])
+    query_vectors = await cas.get_vectors([event.query])
 
-    image_infos = await qdrant.search(project_id, query_vectors[0], limit)
+    image_infos = await qdrant.search(event.project_id, query_vectors[0], event.limit)
     sly.logger.debug(f"Found {len(image_infos)} similar images.")
 
     return image_infos
 
 
-@server.post("/diverse")
+@app.event(Event.Diverse, use_state=True)
 @timer
-async def diverse(request: Request) -> List[ImageInfoLite]:
-    """Generate diverse population for the given project using the specified method
-    and limit.
-    Context must contain the following key-value pairs:
-        - project_id: Project ID to generate diverse population for.
-        - method: Method to use for generating diverse population.
-        - limit: Number of images to generate.
-
-    Supported methods:
-        - kmeans
-
-    Optional keys in the context:
-        - option: additional parameter for the method. For the kmeans method.
-            possible values for kmeans:
-                - "random" - will pick random elements from the clusters
-                - "centroids" - will pick centroids of the clusters
-
-    :param request: FastAPI request object.
-    :type request: Request
-    :return: List of ImageInfoLite objects.
-    :rtype: List[ImageInfoLite]
-    """
-    state = request.state.state
-    sly.logger.debug(f"Retrieved state of the request: {state}.")
-
-    project_id = state.pop(StateFields.PROJECT_ID)
-    method = state.pop(StateFields.METHOD)
-    limit = state.pop(StateFields.LIMIT)
-    sly.logger.debug(
-        f"Generating diverse population for project {project_id} with method {method}"
+async def diverse(api: sly.Api, event: Event.Diverse) -> List[ImageInfoLite]:
+    sly.logger.info(
+        f"Generating diverse population for project {event.project_id}. "
+        f"Method: {event.query}, Limit: {event.limit}, Option: {event.option}."
     )
 
-    image_infos = await qdrant.diverse(project_id, limit, method=method, **state)
+    image_infos = await qdrant.diverse(
+        event.project_id,
+        event.limit,
+        event.method,
+        event.option,
+    )
     sly.logger.debug(f"Generated {len(image_infos)} diverse images.")
 
     return image_infos

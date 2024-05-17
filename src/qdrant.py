@@ -282,7 +282,10 @@ async def get_items(
 
 @timer
 async def diverse(
-    collection_name: str, num_images: int, method: str, **kwargs
+    collection_name: str,
+    num_images: int,
+    method: str,
+    option: str,
 ) -> List[ImageInfoLite]:
     """Generate a diverse population of images using the specified method.
 
@@ -292,17 +295,14 @@ async def diverse(
     :type num_images: int
     :param method: The method to use for generating diverse images.
     :type method: str
+    :param option: Option is an additional parameter for the method.
+    :type option: str
     :raises ValueError: If the method is not supported.
     :return: A list of diverse images as ImageInfoLite objects.
     :rtype: List[ImageInfoLite]
     """
     if method == QdrantFields.KMEANS:
-        num_clusters = kwargs.get(QdrantFields.NUM_CLUSTERS)
-        option = kwargs.get(QdrantFields.OPTION)
-        return await diverse_kmeans(collection_name, num_images, num_clusters, option)
-    elif method == QdrantFields.FPS:
-        initial_vector = kwargs.get(QdrantFields.INITIAL_VECTOR)
-        return await diverse_fps(collection_name, num_images, initial_vector)
+        return await diverse_kmeans(collection_name, num_images, option)
     else:
         raise ValueError(f"Method {method} is not supported.")
 
@@ -311,8 +311,8 @@ async def diverse(
 async def diverse_kmeans(
     collection_name: str,
     num_images: int,
-    num_clusters: int = None,
     option: Literal["random", "centroids"] = None,
+    num_clusters: int = None,
 ) -> List[ImageInfoLite]:
     """Generate a diverse population of images using KMeans clustering.
     Two options are available: "random" and "centroids".
@@ -323,10 +323,10 @@ async def diverse_kmeans(
     :type collection_name: str
     :param num_images: The number of diverse images to generate.
     :type num_images: int
-    :param num_clusters: The number of clusters to use in KMeans clustering.
-    :type num_clusters: int
     :param option: The option to use for choosing images from clusters, defaults to None.
     :type option: Literal["random", "centroids"], optional
+    :param num_clusters: The number of clusters to use in KMeans clustering.
+    :type num_clusters: int
     :return: A list of diverse images as ImageInfoLite objects.
     :rtype: List[ImageInfoLite]
     """
@@ -408,46 +408,3 @@ async def get_single_point(
     image_infos, vectors = await search(
         collection_name, vector, limit, return_vectors=True
     )
-
-
-@timer
-async def diverse_fps(
-    collection_name: str,
-    num_images: int,
-    initial_vector: np.ndarray = None,
-) -> List[ImageInfoLite]:
-    """Generate a diverse population of images using Farthest Point Sampling (FPS).
-
-    :param collection_name: The name of the collection to get items from.
-    :type collection_name: str
-    :param num_images: The number of diverse images to generate.
-    :type num_images: int
-    :param initial_vector: The initial vector to start the sampling from, defaults to None.
-    :type initial_vector: np.ndarray, optional
-    :return: A list of diverse images as ImageInfoLite objects.
-    :rtype: List[ImageInfoLite]
-    """
-    collection = await client.get_collection(collection_name)
-
-    _, vectors = await get_items(collection_name, 1)
-    vector_len = len(vectors[0])
-    if not initial_vector:
-        query_vector = np.random.rand(1, vector_len).flatten()
-    else:
-        if not len(initial_vector) == vector_len:
-            raise ValueError(
-                f"The length of the initial vector should be {vector_len}."
-            )
-        query_vector = initial_vector
-
-    diverse_images = []
-    while len(diverse_images) < num_images:
-        image_info, vector = await get_single_point(
-            collection_name,
-            query_vector,
-            limit=collection.points_count,
-        )
-        diverse_images.append(image_info)
-        query_vector = vector
-
-    return diverse_images

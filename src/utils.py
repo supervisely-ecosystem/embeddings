@@ -29,6 +29,8 @@ class TupleFields:
     ATLAS_ID = "atlasId"
     ATLAS_INDEX = "atlasIndex"
     VECTOR = "vector"
+    FILE_NAME = "fileName"
+    IMAGES = "images"
 
 
 class StateFields:

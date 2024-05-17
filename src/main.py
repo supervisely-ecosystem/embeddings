@@ -11,10 +11,12 @@ import src.globals as g
 import src.qdrant as qdrant
 import src.thumbnails as thumbnails
 from src.atlas import get_atlas
+from src.events import Event
 from src.pointclouds import get_tile_infos, save_pointcloud
 from src.utils import (
     ImageInfoLite,
     StateFields,
+    TupleFields,
     _get_api_from_request,
     download_items,
     get_datasets,
@@ -38,6 +40,7 @@ async def create_atlas(request: Request) -> None:
     :type request: Request
     """
     # Step 1: Unpack data from the request.
+    api = _get_api_from_request(request)
     state = request.state.state
     sly.logger.debug(f"Retrieved state of the request: {state}.")
     project_id = state.get(StateFields.PROJECT_ID)
@@ -49,6 +52,7 @@ async def create_atlas(request: Request) -> None:
 
     # Step 3: Save atlas pages and prepare atlas map.
     atlas_map, tile_infos = await process_atlas(
+        api,
         project_id,
         project_atlas_dir,
         atlas_size=g.ATLAS_SIZE,
@@ -68,9 +72,10 @@ async def create_atlas(request: Request) -> None:
     sly.logger.info(f"Atlas for project {project_id} has been created.")
 
 
-@server.post("/embeddings")
+# @server.post("/embeddings")
+@app.event(Event.Embeddings)
 @timer
-async def create_embeddings(request: Request) -> None:
+async def create_embeddings(api: sly.Api, event: Event.Embeddings) -> None:
     """Create embeddings for the specified project.
     Context must contain the following key-value pairs:
         - project_id: Project ID to create embeddings for.
@@ -83,43 +88,37 @@ async def create_embeddings(request: Request) -> None:
     :type request: Request
     """
     # Step 1: Unpack data from the request.
-    api = _get_api_from_request(request)
-    if not api:
-        sly.logger.error("API is not available in the request.")
-        return
-
-    state = request.state.state
-    sly.logger.debug(f"Retrieved state of the request: {state}.")
-    project_id = state.get(StateFields.PROJECT_ID)
-    sly.logger.debug(f"Creating embeddings for project {project_id}...")
+    # sly.logger.debug(f"Retrieved state of the request: {state}.")
+    # project_id = state.get(StateFields.PROJECT_ID)
+    # sly.logger.debug(f"Creating embeddings for project {project_id}...")
     # If state contains list of image_ids it means that we're
     # updating embeddings for specific images, otherwise we're updating
     # the whole project.
-    image_ids = state.get(StateFields.IMAGE_IDS)
-    force = state.get(StateFields.FORCE)
+    # image_ids = state.get(StateFields.IMAGE_IDS)
+    # force = state.get(StateFields.FORCE)
 
-    if force:
+    if event.force:
         # Step 1.1: If force is True, delete the collection and recreate it.
-        sly.logger.debug(f"Force enabled, deleting collection {project_id}.")
-        await qdrant.delete_collection(project_id)
-        sly.logger.debug(f"Deleting HDF5 file for project {project_id}.")
-        thumbnails.remove_hdf5(project_id)
+        sly.logger.debug(f"Force enabled, deleting collection {event.project_id}.")
+        await qdrant.delete_collection(event.project_id)
+        sly.logger.debug(f"Deleting HDF5 file for project {event.project_id}.")
+        thumbnails.remove_hdf5(event.project_id)
 
     # Step 2: Ensure collection exists in Qdrant.
-    await qdrant.get_or_create_collection(project_id)
+    await qdrant.get_or_create_collection(event.project_id)
 
     # Step 3: Process images.
-    if not image_ids:
+    if not event.image_ids:
         # Step 3A: If image_ids are not provided, get all datasets from the project.
         # Then iterate over datasets and process images from each dataset.
-        datasets = await get_datasets(api, project_id)
+        datasets = await get_datasets(api, event.project_id)
         for dataset in datasets:
-            await process_images(api, project_id, dataset_id=dataset.id)
+            await process_images(api, event.project_id, dataset_id=dataset.id)
     else:
         # Step 3B: If image_ids are provided, process images with specific IDs.
-        await process_images(api, project_id, image_ids=image_ids)
+        await process_images(api, event.project_id, image_ids=event.image_ids)
 
-    sly.logger.debug(f"Embeddings for project {project_id} have been created.")
+    sly.logger.debug(f"Embeddings for project {event.project_id} have been created.")
 
 
 @server.post("/search")
@@ -201,7 +200,11 @@ async def diverse(request: Request) -> List[ImageInfoLite]:
 
 @timer
 async def process_atlas(
-    project_id: int, project_atlas_dir: str, atlas_size: int, tile_size: int
+    api: sly.Api,
+    project_id: int,
+    project_atlas_dir: str,
+    atlas_size: int,
+    tile_size: int,
 ) -> Tuple[List[Dict], Dict[str, List[Dict[str, Union[int, str]]]]]:
     """Process the atlas for the given project.
     Generate the atlas pages and save them to the project directory (as PNG files).
@@ -209,6 +212,8 @@ async def process_atlas(
     Prepare the list of tile_infos for the pointcloud creation. The order of tile_infos
     will be the same as the order of the tiles in the atlas.
 
+    :param api: Supervisely API object.
+    :type api: sly.Api
     :param project_id: Project ID to create the atlas for.
     :type project_id: int
     :param project_atlas_dir: Directory to save the atlas pages and later the atlas manifest
@@ -241,11 +246,10 @@ async def process_atlas(
         # and will be used in Embeddings widget to display the atlas.
         images.append(
             {
-                # TODO: Add Enum with keys to avoid using strings.
-                "id": idx,
-                "unitSize": tile_size,
-                "fileName": file_name,
-                "url": "",  # URL will be added when serving the file, fileName will be used.
+                TupleFields.ID: idx,
+                TupleFields.UNIT_SIZE: tile_size,
+                TupleFields.FILE_NAME: file_name,
+                TupleFields.URL: "",  # URL will be added when serving the file, fileName will be used.
             }
         )
 
@@ -263,7 +267,7 @@ async def process_atlas(
         sly.logger.debug(f"Atlas page {file_name} has been saved.")
 
     atlas_map = {
-        "images": images,
+        TupleFields.IMAGES: images,
     }
 
     return atlas_map, tile_infos
@@ -303,9 +307,6 @@ async def process_images(
 
     # Batch image urls.
     for image_batch in sly.batched(diff_image_infos):
-        # url_batch = [image_info.url for image_info in image_batch]
-        # ids_batch = [image_info.id for image_info in image_batch]
-
         # Download images as numpy arrays using URLs resized
         # for for specified HDF5 sizes (for thumbnails in the atlas).
         nps_batch = await download_items(

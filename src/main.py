@@ -87,15 +87,10 @@ async def create_embeddings(api: sly.Api, event: Event.Embeddings) -> None:
     :param request: FastAPI request object.
     :type request: Request
     """
-    # Step 1: Unpack data from the request.
-    # sly.logger.debug(f"Retrieved state of the request: {state}.")
-    # project_id = state.get(StateFields.PROJECT_ID)
-    # sly.logger.debug(f"Creating embeddings for project {project_id}...")
-    # If state contains list of image_ids it means that we're
-    # updating embeddings for specific images, otherwise we're updating
-    # the whole project.
-    # image_ids = state.get(StateFields.IMAGE_IDS)
-    # force = state.get(StateFields.FORCE)
+    sly.logger.debug(
+        f"Started creating embeddings for project {event.project_id}. "
+        f"Force: {event.force}, Image IDs: {event.image_ids}."
+    )
 
     if event.force:
         # Step 1.1: If force is True, delete the collection and recreate it.

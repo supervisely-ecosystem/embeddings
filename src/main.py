@@ -21,7 +21,6 @@ from src.utils import (
     get_image_infos,
     rgb_to_rgba,
     timer,
-    upload_files,
 )
 
 app = sly.Application()

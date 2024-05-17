@@ -7,7 +7,7 @@ class Event:
     class Embeddings:
         endpoint = "/embeddings"
 
-        def __init___(
+        def __init__(
             self, project_id: int, force: Optional[bool], image_ids: Optional[List[int]]
         ):
             self.project_id = project_id

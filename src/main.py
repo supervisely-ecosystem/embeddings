@@ -57,12 +57,6 @@ async def create_atlas(api: sly.Api, event: Event.Atlas) -> None:
         event.project_id, project_atlas_dir, tile_infos
     )
     pcd_remote_path = f"{g.TEAM_FILES_EMBEDDINGS_DIR}/{event.project_id}/pointcloud.pcd"
-    # file_info = await upload_files(
-    #     api,
-    #     event.team_id,
-    #     [pcd_local_path],
-    #     [pcd_remote_path],
-    # )[0]
     file_info = api.file.upload(event.team_id, pcd_local_path, pcd_remote_path)
     remote_pcd_path = file_info.full_storage_url
 
@@ -222,7 +216,6 @@ async def process_atlas(
         )
         sly.logger.debug(f"Atlas page {file_name} has been saved.")
 
-    # file_infos = await upload_files(api, team_id, local_paths, remote_paths)
     file_infos = api.file.upload_bulk(team_id, local_paths, remote_paths)
     sly.logger.debug(
         f"{len(file_infos)} atlas pages have been uploaded to the team files."

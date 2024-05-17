@@ -351,11 +351,3 @@ def get_image_infos(
         )
         for image_info in image_infos
     ]
-
-
-# @to_thread
-# @timer
-# def upload_files(
-#     api: sly.Api, team_id: int, local_paths: List[str], remote_paths: List[str]
-# ) -> List[sly.api.file_api.FileInfo]:
-#     return api.file.upload_bulk(team_id, local_paths, remote_paths)

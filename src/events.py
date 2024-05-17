@@ -25,12 +25,12 @@ class Event:
     class Atlas:
         endpoint = "/atlas"
 
-        def __init__(self, project_id: int):
+        def __init__(self, project_id: int, team_id: int):
             self.project_id = project_id
 
         @classmethod
         def from_json(cls, data: Dict[str, Any]):
-            return cls(data.get(EventFields.PROJECT_ID))
+            return cls(data.get(EventFields.PROJECT_ID), data.get(EventFields.TEAM_ID))
 
     class Search:
         endpoint = "/search"

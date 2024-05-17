@@ -13,6 +13,7 @@ from src.atlas import get_atlas
 from src.events import Event
 from src.pointclouds import get_tile_infos, save_pointcloud
 from src.utils import (
+    EventFields,
     ImageInfoLite,
     TupleFields,
     download_items,
@@ -20,6 +21,7 @@ from src.utils import (
     get_image_infos,
     rgb_to_rgba,
     timer,
+    upload_files,
 )
 
 app = sly.Application()
@@ -38,23 +40,38 @@ async def create_atlas(api: sly.Api, event: Event.Atlas) -> None:
     # Step 2: Save atlas pages and prepare atlas map.
     atlas_map, tile_infos = await process_atlas(
         api,
+        event.team_id,
         event.project_id,
         project_atlas_dir,
         atlas_size=g.ATLAS_SIZE,
         tile_size=g.IMAGE_SIZE_FOR_ATLAS,
     )
 
+    # TODO: We don't need to save the atlas map to the JSON file.
+    # It will be returned to the client and used to display the atlas.
     # Step 3: Save atlas map to the JSON file.
-    json.dump(
-        atlas_map,
-        open(os.path.join(project_atlas_dir, f"{event.project_id}.json"), "w"),
-        indent=4,
-    )
+    # atlas_map_path = os.path.join(project_atlas_dir, "atlas.json")
+    # json.dump(atlas_map, open(os.path.join(atlas_map_path), "w"), indent=4)
 
     # Step 4: Create and save pointcloud into PCD file.
-    await save_pointcloud(event.project_id, project_atlas_dir, tile_infos)
+    pcd_local_path = await save_pointcloud(
+        event.project_id, project_atlas_dir, tile_infos
+    )
+    pcd_remote_path = f"{g.TEAM_FILES_EMBEDDINGS_DIR}/{event.project_id}/pointcloud.pcd"
+    file_info = await upload_files(
+        api,
+        event.team_id,
+        [pcd_local_path],
+        [pcd_remote_path],
+    )[0]
+    remote_pcd_path = file_info.full_storage_url
 
     sly.logger.info(f"Atlas for project {event.project_id} has been created.")
+
+    return {
+        EventFields.ATLAS: atlas_map,
+        EventFields.POINTCLOUD: remote_pcd_path,
+    }
 
 
 @app.event(Event.Embeddings, use_state=True)
@@ -132,6 +149,7 @@ async def diverse(api: sly.Api, event: Event.Diverse) -> List[ImageInfoLite]:
 @timer
 async def process_atlas(
     api: sly.Api,
+    team_id: int,
     project_id: int,
     project_atlas_dir: str,
     atlas_size: int,
@@ -145,6 +163,8 @@ async def process_atlas(
 
     :param api: Supervisely API object.
     :type api: sly.Api
+    :param team_id: Team ID to upload the atlas pages to.
+    :type team_id: int
     :param project_id: Project ID to create the atlas for.
     :type project_id: int
     :param project_atlas_dir: Directory to save the atlas pages and later the atlas manifest
@@ -162,6 +182,9 @@ async def process_atlas(
     images = []
     tile_infos = []
 
+    local_paths = []
+    remote_paths = []
+
     for idx, tiles in enumerate(thumbnails.get_tiles_from_hdf5(project_id=project_id)):
         file_name = f"{project_id}_{idx}.png"
         image_ids = [tile.id for tile in tiles]
@@ -173,14 +196,16 @@ async def process_atlas(
         # Add corresponding tile_infos to the list. It will be used to create the pointcloud.
         tile_infos.extend(await get_tile_infos(idx, project_id, image_ids))
 
+        local_path = os.path.join(project_atlas_dir, file_name)
+        remote_path = f"{g.TEAM_FILES_EMBEDDINGS_DIR}/{project_id}/{file_name}"
+        local_paths.append(local_path)
+        remote_paths.append(remote_path)
         # This dictionary will be used to create the JSON file with the atlas manifest
         # and will be used in Embeddings widget to display the atlas.
         images.append(
             {
                 TupleFields.ID: idx,
                 TupleFields.UNIT_SIZE: tile_size,
-                TupleFields.FILE_NAME: file_name,
-                TupleFields.URL: "",  # URL will be added when serving the file, fileName will be used.
             }
         )
 
@@ -191,11 +216,19 @@ async def process_atlas(
 
         # Save atlas image to the file.
         sly.image.write(
-            os.path.join(project_atlas_dir, file_name),
+            local_path,
             page_image,
             remove_alpha_channel=False,
         )
         sly.logger.debug(f"Atlas page {file_name} has been saved.")
+
+    file_infos = await upload_files(api, team_id, local_paths, remote_paths)
+    sly.logger.debug(
+        f"{len(file_infos)} atlas pages have been uploaded to the team files."
+    )
+
+    for image, file_info in zip(images, file_infos):
+        image[TupleFields.URL] = file_info.full_storage_url
 
     atlas_map = {
         TupleFields.IMAGES: images,

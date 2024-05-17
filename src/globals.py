@@ -25,6 +25,7 @@ if not cas_host:
     raise ValueError("CAS_HOST is not set in the environment variables")
 
 # region constants
+TEAM_FILES_EMBEDDINGS_DIR = "/embeddings"
 STORAGE_DIR = sly.env.agent_storage()
 HDF5_DIR = os.path.join(STORAGE_DIR, "hdf5")
 ATLAS_DIR = os.path.join(STORAGE_DIR, "atlas")

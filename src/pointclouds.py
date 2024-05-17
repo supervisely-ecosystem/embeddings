@@ -115,7 +115,7 @@ async def get_tile_infos(
 @timer
 async def save_pointcloud(
     project_id: int, project_atlas_dir: str, tile_infos: List[PointCloudTileInfo]
-) -> None:
+) -> str:
     """Save the point cloud to the project directory using the tile vectors and UMAP.
 
     :param project_id: The ID of the project.
@@ -124,6 +124,8 @@ async def save_pointcloud(
     :type project_atlas_dir: str
     :param tile_infos: The list of tile information.
     :type tile_infos: List[PointCloudTileInfo]
+    :return: The path to the saved point cloud.
+    :rtype: str
     """
     # Create UMAP vectors from the tile vectors.
     umap_vectors = await create_umap([tile_info.vector for tile_info in tile_infos])
@@ -132,15 +134,13 @@ async def save_pointcloud(
     cloud = await get_pointcloud(umap_vectors, tile_infos)
 
     # Save the point cloud to the project directory.
-    cloud.save(
-        os.path.join(project_atlas_dir, f"{project_id}.pcd"),
-        encoding=Encoding.BINARY_COMPRESSED,
-    )
+    save_path = os.path.join(project_atlas_dir, f"{project_id}.pcd")
+    cloud.save(save_path, encoding=Encoding.BINARY_COMPRESSED)
 
     if sly.is_development():
         # Debugging information about the point cloud. Will be visible in the development mode.
-        cloud = PointCloud.from_path(
-            os.path.join(project_atlas_dir, f"{project_id}.pcd")
-        )
+        cloud = PointCloud.from_path(save_path)
         sly.logger.debug(f"Number of points in the cloud: {cloud.points}")
         sly.logger.debug(f"Fields in the PCD file: {cloud.fields}")
+
+    return save_path

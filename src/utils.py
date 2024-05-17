@@ -28,7 +28,6 @@ class TupleFields:
     ATLAS_ID = "atlasId"
     ATLAS_INDEX = "atlasIndex"
     VECTOR = "vector"
-    FILE_NAME = "fileName"
     IMAGES = "images"
 
 
@@ -36,11 +35,15 @@ class EventFields:
     """Fields of the event in request objects."""
 
     PROJECT_ID = "project_id"
+    TEAM_ID = "team_id"
     IMAGE_IDS = "image_ids"
     FORCE = "force"
     QUERY = "query"
     LIMIT = "limit"
     METHOD = "method"
+
+    ATLAS = "atlas"
+    POINTCLOUD = "pointcloud"
 
 
 class QdrantFields:
@@ -348,3 +351,11 @@ def get_image_infos(
         )
         for image_info in image_infos
     ]
+
+
+@to_thread
+@timer
+def upload_files(
+    api: sly.Api, team_id: int, local_paths: List[str], remote_paths: List[str]
+) -> List[sly.api.file_api.FileInfo]:
+    return api.file.upload_bulk(team_id, local_paths, remote_paths)

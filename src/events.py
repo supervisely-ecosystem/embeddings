@@ -27,6 +27,7 @@ class Event:
 
         def __init__(self, project_id: int, team_id: int):
             self.project_id = project_id
+            self.team_id = team_id
 
         @classmethod
         def from_json(cls, data: Dict[str, Any]):

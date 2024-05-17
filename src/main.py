@@ -73,7 +73,7 @@ async def create_atlas(request: Request) -> None:
 
 
 # @server.post("/embeddings")
-@app.event(Event.Embeddings)
+@app.event(Event.Embeddings, use_state=True)
 @timer
 async def create_embeddings(api: sly.Api, event: Event.Embeddings) -> None:
     """Create embeddings for the specified project.

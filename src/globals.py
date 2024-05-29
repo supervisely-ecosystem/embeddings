@@ -33,6 +33,7 @@ IMAGE_SIZE_FOR_CAS = 224
 IMAGE_SIZE_FOR_ATLAS = 32
 ATLAS_SIZE = pow(2, 13)
 HDF5_URL_KEY = "url"
+UPDATED_AT_KEY = "updated_at"
 DEFAULT_PCD_FIELDS = ["x", "y", "z"]
 # endregion
 sly.fs.mkdir(HDF5_DIR)

@@ -1,7 +1,9 @@
+import asyncio
 import os
 from typing import Dict, List, Tuple, Union
 
 import supervisely as sly
+import supervisely.app.development as sly_app_development
 from pympler import asizeof
 
 import src.cas as cas
@@ -21,6 +23,11 @@ from src.utils import (
     rgb_to_rgba,
     timer,
 )
+
+if sly.is_development():
+    team_id = 448
+    sly_app_development.supervisely_vpn_network(action="up")
+    sly_app_development.create_debug_task(team_id, port="8000")
 
 app = sly.Application()
 server = app.get_server()
@@ -260,10 +267,56 @@ async def process_images(
 
     # Get diff of image infos, check if they are already
     # in the Qdrant collection and have the same updated_at field.
-    diff_image_infos = await qdrant.get_diff(project_id, image_infos)
+    qdrant_diff = await qdrant.get_diff(project_id, image_infos)
 
-    # Batch image urls.
-    for image_batch in sly.batched(diff_image_infos):
+    # Get diff of image infos, check if they are already
+    # in the HDF5 file and have the same updated_at field.
+    hdf5_diff = thumbnails.get_diff(project_id, image_infos)
+
+    asyncio.gather(
+        image_infos_to_hdf5(project_id, hdf5_diff),
+        image_infos_to_db(project_id, qdrant_diff),
+    )
+
+
+@timer
+async def image_infos_to_db(project_id: int, image_infos: List[ImageInfoLite]) -> None:
+    """Save image infos to the database.
+
+    :param image_infos: List of image infos to save.
+    :type image_infos: List[ImageInfoLite]
+    """
+    sly.logger.debug(f"Upserting {len(image_infos)} vectors to Qdrant.")
+    for image_batch in sly.batched(image_infos):
+        # Get vectors from images.
+        vectors_batch = await cas.get_vectors(
+            [image_info.cas_url for image_info in image_batch]
+        )
+
+        sly.logger.debug(f"Received {len(vectors_batch)} vectors.")
+
+        # Upsert vectors to Qdrant.
+        await qdrant.upsert(
+            project_id,
+            vectors_batch,
+            image_batch,
+        )
+    sly.logger.debug(f"Upserted {len(image_infos)} vectors to Qdrant.")
+
+
+@timer
+async def image_infos_to_hdf5(
+    project_id: int, image_infos: List[ImageInfoLite]
+) -> None:
+    """Save image infos to the HDF5 file.
+
+    :param project_id: Project ID to save image infos to.
+    :type project_id: int
+    :param image_infos: List of image infos to save.
+    :type image_infos: List[ImageInfoLite]
+    """
+    sly.logger.debug(f"Saving {len(image_infos)} images to HDF5.")
+    for image_batch in sly.batched(image_infos):
         # Download images as numpy arrays using URLs resized
         # for for specified HDF5 sizes (for thumbnails in the atlas).
         nps_batch = await download_items(
@@ -275,15 +328,4 @@ async def process_images(
 
         # Save images to hdf5.
         thumbnails.save_to_hdf5(nps_batch, image_batch, project_id)
-
-        # Get vectors from images.
-        vectors_batch = await cas.get_vectors(
-            [image_info.cas_url for image_info in image_batch]
-        )
-
-        # Upsert vectors to Qdrant.
-        await qdrant.upsert(
-            project_id,
-            vectors_batch,
-            image_batch,
-        )
+    sly.logger.debug(f"Saved {len(image_infos)} images to HDF5.")

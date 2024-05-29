@@ -44,6 +44,42 @@ def save_to_hdf5(
             )
 
             dataset.attrs[g.HDF5_URL_KEY] = image_info.full_url
+            dataset.attrs[g.UPDATED_AT_KEY] = image_info.updated_at
+
+
+@timer
+def get_diff(project_id: int, image_infos: List[ImageInfoLite]) -> List[ImageInfoLite]:
+    """Get the list of image infos that are not present in the HDF5 file.
+
+    :param project_id: ID of the project
+    :type project_id: int
+    :param image_infos: List of image infos to check
+    :type image_infos: List[ImageInfoLite]
+    :return: list of image infos that are not present in the HDF5 file
+    :rtype: List[ImageInfoLite]
+    """
+    hdf5_path = get_hdf5_path(project_id)
+    if not os.path.isfile(hdf5_path):
+        sly.logger.debug(
+            f"HDF5 file for project {project_id} does not exist, returning all image infos as diff."
+        )
+        return image_infos
+    diff = []
+    with h5py.File(get_hdf5_path(project_id), "r") as file:
+        for image_info in image_infos:
+            dataset_id = str(image_info.dataset_id)
+            image_id = str(image_info.id)
+            if dataset_id not in file:
+                diff.append(image_info)
+            elif (
+                image_id not in file[dataset_id]
+                or file[dataset_id][image_id].attrs.get(g.UPDATED_AT_KEY)
+                != image_info.updated_at
+            ):
+                diff.append(image_info)
+
+    sly.logger.debug(f"Found {len(diff)} images that are not present in the HDF5 file.")
+    return diff
 
 
 def remove_hdf5(project_id: int) -> None:
